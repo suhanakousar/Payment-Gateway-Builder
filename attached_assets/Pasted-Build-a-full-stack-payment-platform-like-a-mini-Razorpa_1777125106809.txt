@@ -1,0 +1,150 @@
+Build a full-stack payment platform (like a mini Razorpay dashboard) using Next.js (App Router) and Node.js APIs, with PostgreSQL as database.
+
+The system should support merchant onboarding, payment processing using dynamic UPI QR (via external provider like Decentro/Pinelabs), webhook handling, and a clean dashboard.
+
+IMPORTANT DESIGN REQUIREMENTS:
+
+- UI must look human-designed, simple and practical
+- Avoid glassmorphism, neon colors, gradients overload, or futuristic AI-style UI
+- Use clean layout similar to real business dashboards
+- Color theme: soft whites, light greys, subtle blue/green accents
+- Typography: simple (Inter / system font)
+- Layout: minimal, structured, real-world SaaS style
+- Focus on usability, not decoration
+
+---
+
+FEATURES TO IMPLEMENT:
+
+1) MERCHANT SYSTEM:
+
+- Signup / Login (JWT based)
+- Store merchant details (name, email, password, business info)
+- KYC fields (PAN, bank account, IFSC)
+- Admin approval flag
+
+2) PAYMENT SYSTEM:
+
+- API: POST /create-order
+- Input: merchant_id, amount, order_id
+- Store order in DB with status = PENDING
+- Call external API (mock Decentro/Pinelabs)
+- Receive dynamic UPI QR string + txn_id
+- Return QR to frontend
+
+3) FRONTEND PAYMENT PAGE:
+
+- Show QR code
+- Show amount + order id
+- Timer (5 minutes expiry)
+- Status polling (optional)
+
+4) WEBHOOK SYSTEM:
+
+- API: POST /webhook
+- Receive txn_id, status
+- Verify signature (mock logic acceptable)
+- Update order status (SUCCESS / FAILED)
+- Ensure idempotency (no duplicate updates)
+
+5) DASHBOARD:
+
+- Merchant dashboard page
+- Show:
+  - Total transactions
+  - Success / Failed count
+  - Recent payments table
+- Simple charts (optional)
+
+6) DATABASE DESIGN:
+
+Table: merchants
+
+- id
+- name
+- email
+- password
+- kyc_status
+- created_at
+
+Table: orders
+
+- id
+- merchant_id
+- order_id
+- txn_id
+- amount
+- status
+- created_at
+
+7) BACKEND LOGIC:
+
+- Clean modular API structure
+- Separate services:
+  - orderService
+  - paymentService
+  - webhookService
+
+8) ERROR HANDLING:
+
+- Handle API failures
+- Retry logic (basic)
+- Expired orders after 5–10 minutes
+
+9) SECURITY:
+
+- JWT auth
+- Basic validation
+- Webhook signature verification (mock acceptable)
+
+---
+
+PROJECT STRUCTURE:
+
+/app
+/dashboard
+/payment/[orderId]
+/api
+/auth
+/create-order
+/webhook
+
+/lib
+db.js
+paymentProvider.js
+
+---
+
+UX STYLE (VERY IMPORTANT):
+
+- Buttons: simple solid colors
+- Cards: flat, light border (no heavy shadows)
+- Tables: clean grid
+- Spacing: consistent padding
+- No flashy animations
+- Should feel like:
+  - a real startup dashboard
+  - built by a developer, not AI art tool
+
+---
+
+OUTPUT REQUIRED:
+
+- Full backend API code (Next.js API routes)
+- Basic frontend pages (dashboard + payment page)
+- Database schema (SQL)
+- Mock payment provider integration
+- Working QR generation (use any QR library)
+- Webhook simulation endpoint
+
+---
+
+GOAL:
+
+The app should run locally and demonstrate:
+Merchant → Create Order → Show QR → Simulate Payment → Webhook → Dashboard update
+
+---
+
+Do NOT overcomplicate.
+Keep code simple, readable, and realistic like a student-built but production-possible system.

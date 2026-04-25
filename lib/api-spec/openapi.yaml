@@ -3,20 +3,30 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: PayLite payment platform API
 servers:
   - url: /api
     description: Base API path
 tags:
+  - name: auth
+    description: Merchant authentication
+  - name: merchant
+    description: Merchant profile and KYC
+  - name: orders
+    description: Payment orders
+  - name: webhook
+    description: Provider webhook
+  - name: dashboard
+    description: Dashboard analytics
   - name: health
     description: Health operations
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +34,533 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/signup:
+    post:
+      operationId: signup
+      tags: [auth]
+      summary: Create a new merchant account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login as a merchant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+
+  /merchant/me:
+    get:
+      operationId: getMe
+      tags: [merchant]
+      summary: Get current merchant profile
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Merchant"
+
+  /merchant/kyc:
+    put:
+      operationId: updateKyc
+      tags: [merchant]
+      summary: Update merchant KYC details
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KycUpdateRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Merchant"
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      summary: List orders for the current merchant
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        "200":
+          description: Order list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+
+  /orders/create:
+    post:
+      operationId: createOrder
+      tags: [orders]
+      summary: Create a new payment order and generate a UPI QR
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOrderRequest"
+      responses:
+        "200":
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreateOrderResponse"
+
+  /orders/{orderId}:
+    get:
+      operationId: getOrder
+      tags: [orders]
+      summary: Get a public payment page snapshot for an order
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicOrder"
+
+  /orders/{orderId}/simulate:
+    post:
+      operationId: simulatePayment
+      tags: [orders]
+      summary: Simulate a payment outcome (dev tool, triggers webhook)
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulatePaymentRequest"
+      responses:
+        "200":
+          description: Simulated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulatePaymentResponse"
+
+  /webhook:
+    post:
+      operationId: providerWebhook
+      tags: [webhook]
+      summary: Webhook endpoint for the payment provider
+      parameters:
+        - name: x-signature
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookPayload"
+      responses:
+        "200":
+          description: Acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookAck"
+
+  /dashboard/summary:
+    get:
+      operationId: dashboardSummary
+      tags: [dashboard]
+      summary: Headline metrics for the merchant dashboard
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/timeseries:
+    get:
+      operationId: dashboardTimeseries
+      tags: [dashboard]
+      summary: Daily revenue and volume for the past N days
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+            default: 14
+      responses:
+        "200":
+          description: Time series
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeseriesPoint"
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    SignupRequest:
+      type: object
+      required: [name, email, password, businessName]
+      properties:
+        name:
+          type: string
+          minLength: 2
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+        businessName:
+          type: string
+          minLength: 2
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    AuthResponse:
+      type: object
+      required: [token, merchant]
+      properties:
+        token:
+          type: string
+        merchant:
+          $ref: "#/components/schemas/Merchant"
+
+    Merchant:
+      type: object
+      required:
+        - id
+        - name
+        - email
+        - businessName
+        - kycStatus
+        - approved
+        - createdAt
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        businessName:
+          type: string
+        pan:
+          type: string
+          nullable: true
+        bankAccount:
+          type: string
+          nullable: true
+        ifsc:
+          type: string
+          nullable: true
+        kycStatus:
+          type: string
+          enum: [PENDING, SUBMITTED, VERIFIED]
+        approved:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    KycUpdateRequest:
+      type: object
+      required: [pan, bankAccount, ifsc]
+      properties:
+        pan:
+          type: string
+          minLength: 5
+        bankAccount:
+          type: string
+          minLength: 6
+        ifsc:
+          type: string
+          minLength: 6
+
+    CreateOrderRequest:
+      type: object
+      required: [orderId, amount]
+      properties:
+        orderId:
+          type: string
+          description: Merchant's reference id
+          minLength: 1
+        amount:
+          type: number
+          minimum: 1
+        customerName:
+          type: string
+        customerEmail:
+          type: string
+        note:
+          type: string
+
+    CreateOrderResponse:
+      type: object
+      required: [order, qrString, qrImage, paymentUrl, expiresAt]
+      properties:
+        order:
+          $ref: "#/components/schemas/Order"
+        qrString:
+          type: string
+        qrImage:
+          type: string
+          description: Data URL PNG of the QR
+        paymentUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+
+    Order:
+      type: object
+      required:
+        - id
+        - merchantId
+        - orderId
+        - amount
+        - status
+        - createdAt
+        - expiresAt
+      properties:
+        id:
+          type: string
+        merchantId:
+          type: string
+        orderId:
+          type: string
+        txnId:
+          type: string
+          nullable: true
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [PENDING, SUCCESS, FAILED, EXPIRED]
+        customerName:
+          type: string
+          nullable: true
+        customerEmail:
+          type: string
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        qrString:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    PublicOrder:
+      type: object
+      required:
+        - id
+        - orderId
+        - amount
+        - status
+        - businessName
+        - qrString
+        - qrImage
+        - createdAt
+        - expiresAt
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [PENDING, SUCCESS, FAILED, EXPIRED]
+        businessName:
+          type: string
+        qrString:
+          type: string
+        qrImage:
+          type: string
+        note:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+
+    SimulatePaymentRequest:
+      type: object
+      required: [outcome]
+      properties:
+        outcome:
+          type: string
+          enum: [SUCCESS, FAILED]
+
+    SimulatePaymentResponse:
+      type: object
+      required: [ok, status]
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: string
+
+    WebhookPayload:
+      type: object
+      required: [txnId, status]
+      properties:
+        txnId:
+          type: string
+        status:
+          type: string
+          enum: [SUCCESS, FAILED]
+        amount:
+          type: number
+
+    WebhookAck:
+      type: object
+      required: [received]
+      properties:
+        received:
+          type: boolean
+        status:
+          type: string
+
+    DashboardSummary:
+      type: object
+      required:
+        - totalOrders
+        - successCount
+        - failedCount
+        - pendingCount
+        - totalRevenue
+        - successRate
+        - todayRevenue
+      properties:
+        totalOrders:
+          type: integer
+        successCount:
+          type: integer
+        failedCount:
+          type: integer
+        pendingCount:
+          type: integer
+        totalRevenue:
+          type: number
+        successRate:
+          type: number
+        todayRevenue:
+          type: number
+
+    TimeseriesPoint:
+      type: object
+      required: [date, revenue, count]
+      properties:
+        date:
+          type: string
+          format: date
+        revenue:
+          type: number
+        count:
+          type: integer
