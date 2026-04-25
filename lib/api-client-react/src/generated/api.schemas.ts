@@ -3,17 +3,25 @@
  * Do not edit manually.
  * Api
  * PayLite payment platform API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 export interface HealthStatus {
   status: string;
+}
+
+export interface SimpleOk {
+  ok: boolean;
+}
+
+export interface CsrfTokenResponse {
+  csrfToken: string;
 }
 
 export interface SignupRequest {
   /** @minLength 2 */
   name: string;
   email: string;
-  /** @minLength 6 */
+  /** @minLength 8 */
   password: string;
   /** @minLength 2 */
   businessName: string;
@@ -47,7 +55,6 @@ export interface Merchant {
 }
 
 export interface AuthResponse {
-  token: string;
   merchant: Merchant;
 }
 
@@ -82,23 +89,39 @@ export const OrderStatus = {
   EXPIRED: "EXPIRED",
 } as const;
 
+export type OrderRefundStatus =
+  | (typeof OrderRefundStatus)[keyof typeof OrderRefundStatus]
+  | null;
+
+export const OrderRefundStatus = {
+  INITIATED: "INITIATED",
+  SUCCESS: "SUCCESS",
+  FAILED: "FAILED",
+} as const;
+
 export interface Order {
   id: string;
   merchantId: string;
   orderId: string;
   txnId?: string | null;
+  provider: string;
   amount: number;
   status: OrderStatus;
   customerName?: string | null;
   customerEmail?: string | null;
   note?: string | null;
   qrString?: string | null;
+  fraudFlag: boolean;
+  fraudReason?: string | null;
+  refundStatus?: OrderRefundStatus;
+  refundAmount?: number | null;
+  refundedAt?: string | null;
   createdAt: string;
   expiresAt: string;
   paidAt?: string | null;
 }
 
-export interface CreateOrderResponse {
+export interface CreateOrderResult {
   order: Order;
   qrString: string;
   /** Data URL PNG of the QR */
@@ -142,9 +165,32 @@ export interface SimulatePaymentRequest {
   outcome: SimulatePaymentRequestOutcome;
 }
 
-export interface SimulatePaymentResponse {
+export interface SimulatePaymentResult {
   ok: boolean;
   status: string;
+}
+
+export interface RefundRequest {
+  /**
+   * Optional partial refund amount; defaults to full order amount
+   * @minimum 1
+   */
+  amount?: number;
+}
+
+export type RefundResponseRefundStatus =
+  (typeof RefundResponseRefundStatus)[keyof typeof RefundResponseRefundStatus];
+
+export const RefundResponseRefundStatus = {
+  INITIATED: "INITIATED",
+  SUCCESS: "SUCCESS",
+  FAILED: "FAILED",
+} as const;
+
+export interface RefundResponse {
+  orderId: string;
+  refundStatus: RefundResponseRefundStatus;
+  refundAmount: number;
 }
 
 export type WebhookPayloadStatus =
@@ -166,6 +212,47 @@ export interface WebhookAck {
   status?: string;
 }
 
+export interface CreateMerchantWebhookRequest {
+  /** @minLength 8 */
+  webhookUrl: string;
+}
+
+export interface MerchantWebhook {
+  id: string;
+  webhookUrl: string;
+  enabled: boolean;
+  /** Masked secret, e.g. "whsec_••••abcd" */
+  secretMasked: string;
+  createdAt: string;
+}
+
+export interface MerchantWebhookWithSecret {
+  id: string;
+  webhookUrl: string;
+  enabled: boolean;
+  /** Returned only once at creation */
+  webhookSecret: string;
+  createdAt: string;
+}
+
+export interface WebhookTestResponse {
+  ok: boolean;
+  status: number | null;
+  error?: string | null;
+}
+
+export interface WebhookLog {
+  id: string;
+  orderId: string;
+  merchantWebhookId?: string | null;
+  attempt: number;
+  status: string;
+  responseCode?: number | null;
+  responseBody?: string | null;
+  error?: string | null;
+  createdAt: string;
+}
+
 export interface DashboardSummary {
   totalOrders: number;
   successCount: number;
@@ -182,13 +269,52 @@ export interface TimeseriesPoint {
   count: number;
 }
 
-export type ListOrdersParams = {
+export type ListWebhookLogsParams = {
   /**
    * @minimum 1
-   * @maximum 100
+   * @maximum 200
    */
   limit?: number;
 };
+
+export type ListOrdersParams = {
+  /**
+   * @minimum 1
+   * @maximum 500
+   */
+  limit?: number;
+  status?: ListOrdersStatus;
+  search?: string;
+  from?: string;
+  to?: string;
+};
+
+export type ListOrdersStatus =
+  (typeof ListOrdersStatus)[keyof typeof ListOrdersStatus];
+
+export const ListOrdersStatus = {
+  PENDING: "PENDING",
+  SUCCESS: "SUCCESS",
+  FAILED: "FAILED",
+  EXPIRED: "EXPIRED",
+} as const;
+
+export type ExportOrdersParams = {
+  status?: ExportOrdersStatus;
+  search?: string;
+  from?: string;
+  to?: string;
+};
+
+export type ExportOrdersStatus =
+  (typeof ExportOrdersStatus)[keyof typeof ExportOrdersStatus];
+
+export const ExportOrdersStatus = {
+  PENDING: "PENDING",
+  SUCCESS: "SUCCESS",
+  FAILED: "FAILED",
+  EXPIRED: "EXPIRED",
+} as const;
 
 export type DashboardTimeseriesParams = {
   /**

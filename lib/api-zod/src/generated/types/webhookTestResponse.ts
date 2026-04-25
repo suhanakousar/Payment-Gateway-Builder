@@ -3,10 +3,11 @@
  * Do not edit manually.
  * Api
  * PayLite payment platform API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 
-export interface SimulatePaymentResponse {
+export interface WebhookTestResponse {
   ok: boolean;
-  status: string;
+  status: number | null;
+  error?: string | null;
 }

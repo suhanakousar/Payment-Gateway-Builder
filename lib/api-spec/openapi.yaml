@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
+  version: 0.2.0
   description: PayLite payment platform API
 servers:
   - url: /api
@@ -14,8 +14,12 @@ tags:
     description: Merchant profile and KYC
   - name: orders
     description: Payment orders
+  - name: refunds
+    description: Refund operations
   - name: webhook
-    description: Provider webhook
+    description: Provider webhook receiver
+  - name: merchantWebhooks
+    description: Merchant outbound webhooks
   - name: dashboard
     description: Dashboard analytics
   - name: health
@@ -34,6 +38,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/csrf:
+    get:
+      operationId: getCsrfToken
+      tags: [auth]
+      summary: Issue a CSRF token cookie + value
+      responses:
+        "200":
+          description: CSRF token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CsrfTokenResponse"
 
   /auth/signup:
     post:
@@ -73,13 +90,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuthResponse"
 
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Clear the auth cookie
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleOk"
+
   /merchant/me:
     get:
       operationId: getMe
       tags: [merchant]
       summary: Get current merchant profile
-      security:
-        - bearerAuth: []
       responses:
         "200":
           description: Profile
@@ -93,8 +121,6 @@ paths:
       operationId: updateKyc
       tags: [merchant]
       summary: Update merchant KYC details
-      security:
-        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -109,13 +135,81 @@ paths:
               schema:
                 $ref: "#/components/schemas/Merchant"
 
-  /orders:
+  /merchant/webhooks:
     get:
-      operationId: listOrders
-      tags: [orders]
-      summary: List orders for the current merchant
-      security:
-        - bearerAuth: []
+      operationId: listMerchantWebhooks
+      tags: [merchantWebhooks]
+      summary: List the merchant's outbound webhooks
+      responses:
+        "200":
+          description: Webhook list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MerchantWebhook"
+    post:
+      operationId: createMerchantWebhook
+      tags: [merchantWebhooks]
+      summary: Register a new outbound webhook URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMerchantWebhookRequest"
+      responses:
+        "200":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MerchantWebhookWithSecret"
+
+  /merchant/webhooks/{webhookId}:
+    delete:
+      operationId: deleteMerchantWebhook
+      tags: [merchantWebhooks]
+      summary: Delete an outbound webhook
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimpleOk"
+
+  /merchant/webhooks/{webhookId}/test:
+    post:
+      operationId: testMerchantWebhook
+      tags: [merchantWebhooks]
+      summary: Send a test event to the registered webhook
+      parameters:
+        - name: webhookId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookTestResponse"
+
+  /merchant/webhooks/logs:
+    get:
+      operationId: listWebhookLogs
+      tags: [merchantWebhooks]
+      summary: Recent outbound webhook delivery attempts
       parameters:
         - name: limit
           in: query
@@ -123,8 +217,55 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 100
+            maximum: 200
             default: 50
+      responses:
+        "200":
+          description: Logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebhookLog"
+
+  /orders:
+    get:
+      operationId: listOrders
+      tags: [orders]
+      summary: List orders for the current merchant (filterable)
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, SUCCESS, FAILED, EXPIRED]
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
       responses:
         "200":
           description: Order list
@@ -135,13 +276,48 @@ paths:
                 items:
                   $ref: "#/components/schemas/Order"
 
+  /orders/export:
+    get:
+      operationId: exportOrders
+      tags: [orders]
+      summary: Export filtered orders as CSV
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, SUCCESS, FAILED, EXPIRED]
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: CSV stream
+          content:
+            text/csv:
+              schema:
+                type: string
+
   /orders/create:
     post:
       operationId: createOrder
       tags: [orders]
       summary: Create a new payment order and generate a UPI QR
-      security:
-        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -154,7 +330,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/CreateOrderResponse"
+                $ref: "#/components/schemas/CreateOrderResult"
 
   /orders/{orderId}:
     get:
@@ -198,7 +374,32 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SimulatePaymentResponse"
+                $ref: "#/components/schemas/SimulatePaymentResult"
+
+  /orders/{orderId}/refund:
+    post:
+      operationId: refundOrder
+      tags: [refunds]
+      summary: Initiate a refund for a successful order
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefundRequest"
+      responses:
+        "200":
+          description: Refund initiated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefundResponse"
 
   /webhook:
     post:
@@ -230,8 +431,6 @@ paths:
       operationId: dashboardSummary
       tags: [dashboard]
       summary: Headline metrics for the merchant dashboard
-      security:
-        - bearerAuth: []
       responses:
         "200":
           description: Summary
@@ -245,8 +444,6 @@ paths:
       operationId: dashboardTimeseries
       tags: [dashboard]
       summary: Daily revenue and volume for the past N days
-      security:
-        - bearerAuth: []
       parameters:
         - name: days
           in: query
@@ -267,18 +464,26 @@ paths:
                   $ref: "#/components/schemas/TimeseriesPoint"
 
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-
   schemas:
     HealthStatus:
       type: object
       required: [status]
       properties:
         status:
+          type: string
+
+    SimpleOk:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+
+    CsrfTokenResponse:
+      type: object
+      required: [csrfToken]
+      properties:
+        csrfToken:
           type: string
 
     SignupRequest:
@@ -293,7 +498,7 @@ components:
           format: email
         password:
           type: string
-          minLength: 6
+          minLength: 8
         businessName:
           type: string
           minLength: 2
@@ -310,10 +515,8 @@ components:
 
     AuthResponse:
       type: object
-      required: [token, merchant]
+      required: [merchant]
       properties:
-        token:
-          type: string
         merchant:
           $ref: "#/components/schemas/Merchant"
 
@@ -386,7 +589,7 @@ components:
         note:
           type: string
 
-    CreateOrderResponse:
+    CreateOrderResult:
       type: object
       required: [order, qrString, qrImage, paymentUrl, expiresAt]
       properties:
@@ -411,6 +614,8 @@ components:
         - orderId
         - amount
         - status
+        - provider
+        - fraudFlag
         - createdAt
         - expiresAt
       properties:
@@ -423,6 +628,8 @@ components:
         txnId:
           type: string
           nullable: true
+        provider:
+          type: string
         amount:
           type: number
         status:
@@ -439,6 +646,22 @@ components:
           nullable: true
         qrString:
           type: string
+          nullable: true
+        fraudFlag:
+          type: boolean
+        fraudReason:
+          type: string
+          nullable: true
+        refundStatus:
+          type: string
+          nullable: true
+          enum: [INITIATED, SUCCESS, FAILED, null]
+        refundAmount:
+          type: number
+          nullable: true
+        refundedAt:
+          type: string
+          format: date-time
           nullable: true
         createdAt:
           type: string
@@ -497,7 +720,7 @@ components:
           type: string
           enum: [SUCCESS, FAILED]
 
-    SimulatePaymentResponse:
+    SimulatePaymentResult:
       type: object
       required: [ok, status]
       properties:
@@ -505,6 +728,26 @@ components:
           type: boolean
         status:
           type: string
+
+    RefundRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          description: Optional partial refund amount; defaults to full order amount
+          minimum: 1
+
+    RefundResponse:
+      type: object
+      required: [orderId, refundStatus, refundAmount]
+      properties:
+        orderId:
+          type: string
+        refundStatus:
+          type: string
+          enum: [INITIATED, SUCCESS, FAILED]
+        refundAmount:
+          type: number
 
     WebhookPayload:
       type: object
@@ -526,6 +769,90 @@ components:
           type: boolean
         status:
           type: string
+
+    CreateMerchantWebhookRequest:
+      type: object
+      required: [webhookUrl]
+      properties:
+        webhookUrl:
+          type: string
+          format: uri
+          minLength: 8
+
+    MerchantWebhook:
+      type: object
+      required: [id, webhookUrl, enabled, secretMasked, createdAt]
+      properties:
+        id:
+          type: string
+        webhookUrl:
+          type: string
+        enabled:
+          type: boolean
+        secretMasked:
+          type: string
+          description: Masked secret, e.g. "whsec_••••abcd"
+        createdAt:
+          type: string
+          format: date-time
+
+    MerchantWebhookWithSecret:
+      type: object
+      required: [id, webhookUrl, enabled, webhookSecret, createdAt]
+      properties:
+        id:
+          type: string
+        webhookUrl:
+          type: string
+        enabled:
+          type: boolean
+        webhookSecret:
+          type: string
+          description: Returned only once at creation
+        createdAt:
+          type: string
+          format: date-time
+
+    WebhookTestResponse:
+      type: object
+      required: [ok, status]
+      properties:
+        ok:
+          type: boolean
+        status:
+          type: integer
+          nullable: true
+        error:
+          type: string
+          nullable: true
+
+    WebhookLog:
+      type: object
+      required: [id, orderId, attempt, status, createdAt]
+      properties:
+        id:
+          type: string
+        orderId:
+          type: string
+        merchantWebhookId:
+          type: string
+          nullable: true
+        attempt:
+          type: integer
+        status:
+          type: string
+        responseCode:
+          type: integer
+          nullable: true
+        responseBody:
+          type: string
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
 
     DashboardSummary:
       type: object

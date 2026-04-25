@@ -6,10 +6,12 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export type WebhookPayloadStatus =
-  (typeof WebhookPayloadStatus)[keyof typeof WebhookPayloadStatus];
+export type OrderRefundStatus =
+  | (typeof OrderRefundStatus)[keyof typeof OrderRefundStatus]
+  | null;
 
-export const WebhookPayloadStatus = {
+export const OrderRefundStatus = {
+  INITIATED: "INITIATED",
   SUCCESS: "SUCCESS",
   FAILED: "FAILED",
 } as const;

@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * PayLite payment platform API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
@@ -18,23 +18,34 @@ import type {
 
 import type {
   AuthResponse,
+  CreateMerchantWebhookRequest,
   CreateOrderRequest,
-  CreateOrderResponse,
+  CreateOrderResult,
+  CsrfTokenResponse,
   DashboardSummary,
   DashboardTimeseriesParams,
+  ExportOrdersParams,
   HealthStatus,
   KycUpdateRequest,
   ListOrdersParams,
+  ListWebhookLogsParams,
   LoginRequest,
   Merchant,
+  MerchantWebhook,
+  MerchantWebhookWithSecret,
   Order,
   PublicOrder,
+  RefundRequest,
+  RefundResponse,
   SignupRequest,
+  SimpleOk,
   SimulatePaymentRequest,
-  SimulatePaymentResponse,
+  SimulatePaymentResult,
   TimeseriesPoint,
   WebhookAck,
+  WebhookLog,
   WebhookPayload,
+  WebhookTestResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -113,6 +124,81 @@ export function useHealthCheck<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getHealthCheckQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Issue a CSRF token cookie + value
+ */
+export const getGetCsrfTokenUrl = () => {
+  return `/api/auth/csrf`;
+};
+
+export const getCsrfToken = async (
+  options?: RequestInit,
+): Promise<CsrfTokenResponse> => {
+  return customFetch<CsrfTokenResponse>(getGetCsrfTokenUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetCsrfTokenQueryKey = () => {
+  return [`/api/auth/csrf`] as const;
+};
+
+export const getGetCsrfTokenQueryOptions = <
+  TData = Awaited<ReturnType<typeof getCsrfToken>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCsrfToken>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetCsrfTokenQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getCsrfToken>>> = ({
+    signal,
+  }) => getCsrfToken({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getCsrfToken>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetCsrfTokenQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getCsrfToken>>
+>;
+export type GetCsrfTokenQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Issue a CSRF token cookie + value
+ */
+
+export function useGetCsrfToken<
+  TData = Awaited<ReturnType<typeof getCsrfToken>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getCsrfToken>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetCsrfTokenQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -294,6 +380,85 @@ export const useLogin = <
 };
 
 /**
+ * @summary Clear the auth cookie
+ */
+export const getLogoutUrl = () => {
+  return `/api/auth/logout`;
+};
+
+export const logout = async (options?: RequestInit): Promise<SimpleOk> => {
+  return customFetch<SimpleOk>(getLogoutUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getLogoutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logout>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof logout>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["logout"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof logout>>,
+    void
+  > = () => {
+    return logout(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type LogoutMutationResult = NonNullable<
+  Awaited<ReturnType<typeof logout>>
+>;
+
+export type LogoutMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Clear the auth cookie
+ */
+export const useLogout = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof logout>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof logout>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getLogoutMutationOptions(options));
+};
+
+/**
  * @summary Get current merchant profile
  */
 export const getGetMeUrl = () => {
@@ -443,7 +608,434 @@ export const useUpdateKyc = <
 };
 
 /**
- * @summary List orders for the current merchant
+ * @summary List the merchant's outbound webhooks
+ */
+export const getListMerchantWebhooksUrl = () => {
+  return `/api/merchant/webhooks`;
+};
+
+export const listMerchantWebhooks = async (
+  options?: RequestInit,
+): Promise<MerchantWebhook[]> => {
+  return customFetch<MerchantWebhook[]>(getListMerchantWebhooksUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListMerchantWebhooksQueryKey = () => {
+  return [`/api/merchant/webhooks`] as const;
+};
+
+export const getListMerchantWebhooksQueryOptions = <
+  TData = Awaited<ReturnType<typeof listMerchantWebhooks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listMerchantWebhooks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListMerchantWebhooksQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listMerchantWebhooks>>
+  > = ({ signal }) => listMerchantWebhooks({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listMerchantWebhooks>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListMerchantWebhooksQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listMerchantWebhooks>>
+>;
+export type ListMerchantWebhooksQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List the merchant's outbound webhooks
+ */
+
+export function useListMerchantWebhooks<
+  TData = Awaited<ReturnType<typeof listMerchantWebhooks>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listMerchantWebhooks>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListMerchantWebhooksQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Register a new outbound webhook URL
+ */
+export const getCreateMerchantWebhookUrl = () => {
+  return `/api/merchant/webhooks`;
+};
+
+export const createMerchantWebhook = async (
+  createMerchantWebhookRequest: CreateMerchantWebhookRequest,
+  options?: RequestInit,
+): Promise<MerchantWebhookWithSecret> => {
+  return customFetch<MerchantWebhookWithSecret>(getCreateMerchantWebhookUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createMerchantWebhookRequest),
+  });
+};
+
+export const getCreateMerchantWebhookMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createMerchantWebhook>>,
+    TError,
+    { data: BodyType<CreateMerchantWebhookRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createMerchantWebhook>>,
+  TError,
+  { data: BodyType<CreateMerchantWebhookRequest> },
+  TContext
+> => {
+  const mutationKey = ["createMerchantWebhook"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createMerchantWebhook>>,
+    { data: BodyType<CreateMerchantWebhookRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createMerchantWebhook(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateMerchantWebhookMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createMerchantWebhook>>
+>;
+export type CreateMerchantWebhookMutationBody =
+  BodyType<CreateMerchantWebhookRequest>;
+export type CreateMerchantWebhookMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Register a new outbound webhook URL
+ */
+export const useCreateMerchantWebhook = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createMerchantWebhook>>,
+    TError,
+    { data: BodyType<CreateMerchantWebhookRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createMerchantWebhook>>,
+  TError,
+  { data: BodyType<CreateMerchantWebhookRequest> },
+  TContext
+> => {
+  return useMutation(getCreateMerchantWebhookMutationOptions(options));
+};
+
+/**
+ * @summary Delete an outbound webhook
+ */
+export const getDeleteMerchantWebhookUrl = (webhookId: string) => {
+  return `/api/merchant/webhooks/${webhookId}`;
+};
+
+export const deleteMerchantWebhook = async (
+  webhookId: string,
+  options?: RequestInit,
+): Promise<SimpleOk> => {
+  return customFetch<SimpleOk>(getDeleteMerchantWebhookUrl(webhookId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteMerchantWebhookMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteMerchantWebhook>>,
+    TError,
+    { webhookId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteMerchantWebhook>>,
+  TError,
+  { webhookId: string },
+  TContext
+> => {
+  const mutationKey = ["deleteMerchantWebhook"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteMerchantWebhook>>,
+    { webhookId: string }
+  > = (props) => {
+    const { webhookId } = props ?? {};
+
+    return deleteMerchantWebhook(webhookId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteMerchantWebhookMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteMerchantWebhook>>
+>;
+
+export type DeleteMerchantWebhookMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete an outbound webhook
+ */
+export const useDeleteMerchantWebhook = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteMerchantWebhook>>,
+    TError,
+    { webhookId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteMerchantWebhook>>,
+  TError,
+  { webhookId: string },
+  TContext
+> => {
+  return useMutation(getDeleteMerchantWebhookMutationOptions(options));
+};
+
+/**
+ * @summary Send a test event to the registered webhook
+ */
+export const getTestMerchantWebhookUrl = (webhookId: string) => {
+  return `/api/merchant/webhooks/${webhookId}/test`;
+};
+
+export const testMerchantWebhook = async (
+  webhookId: string,
+  options?: RequestInit,
+): Promise<WebhookTestResponse> => {
+  return customFetch<WebhookTestResponse>(
+    getTestMerchantWebhookUrl(webhookId),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getTestMerchantWebhookMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testMerchantWebhook>>,
+    TError,
+    { webhookId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof testMerchantWebhook>>,
+  TError,
+  { webhookId: string },
+  TContext
+> => {
+  const mutationKey = ["testMerchantWebhook"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof testMerchantWebhook>>,
+    { webhookId: string }
+  > = (props) => {
+    const { webhookId } = props ?? {};
+
+    return testMerchantWebhook(webhookId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TestMerchantWebhookMutationResult = NonNullable<
+  Awaited<ReturnType<typeof testMerchantWebhook>>
+>;
+
+export type TestMerchantWebhookMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Send a test event to the registered webhook
+ */
+export const useTestMerchantWebhook = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testMerchantWebhook>>,
+    TError,
+    { webhookId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof testMerchantWebhook>>,
+  TError,
+  { webhookId: string },
+  TContext
+> => {
+  return useMutation(getTestMerchantWebhookMutationOptions(options));
+};
+
+/**
+ * @summary Recent outbound webhook delivery attempts
+ */
+export const getListWebhookLogsUrl = (params?: ListWebhookLogsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/merchant/webhooks/logs?${stringifiedParams}`
+    : `/api/merchant/webhooks/logs`;
+};
+
+export const listWebhookLogs = async (
+  params?: ListWebhookLogsParams,
+  options?: RequestInit,
+): Promise<WebhookLog[]> => {
+  return customFetch<WebhookLog[]>(getListWebhookLogsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListWebhookLogsQueryKey = (params?: ListWebhookLogsParams) => {
+  return [`/api/merchant/webhooks/logs`, ...(params ? [params] : [])] as const;
+};
+
+export const getListWebhookLogsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listWebhookLogs>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListWebhookLogsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWebhookLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListWebhookLogsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listWebhookLogs>>> = ({
+    signal,
+  }) => listWebhookLogs(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listWebhookLogs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListWebhookLogsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listWebhookLogs>>
+>;
+export type ListWebhookLogsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Recent outbound webhook delivery attempts
+ */
+
+export function useListWebhookLogs<
+  TData = Awaited<ReturnType<typeof listWebhookLogs>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListWebhookLogsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWebhookLogs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListWebhookLogsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List orders for the current merchant (filterable)
  */
 export const getListOrdersUrl = (params?: ListOrdersParams) => {
   const normalizedParams = new URLSearchParams();
@@ -510,7 +1102,7 @@ export type ListOrdersQueryResult = NonNullable<
 export type ListOrdersQueryError = ErrorType<unknown>;
 
 /**
- * @summary List orders for the current merchant
+ * @summary List orders for the current merchant (filterable)
  */
 
 export function useListOrders<
@@ -537,6 +1129,100 @@ export function useListOrders<
 }
 
 /**
+ * @summary Export filtered orders as CSV
+ */
+export const getExportOrdersUrl = (params?: ExportOrdersParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/orders/export?${stringifiedParams}`
+    : `/api/orders/export`;
+};
+
+export const exportOrders = async (
+  params?: ExportOrdersParams,
+  options?: RequestInit,
+): Promise<string> => {
+  return customFetch<string>(getExportOrdersUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getExportOrdersQueryKey = (params?: ExportOrdersParams) => {
+  return [`/api/orders/export`, ...(params ? [params] : [])] as const;
+};
+
+export const getExportOrdersQueryOptions = <
+  TData = Awaited<ReturnType<typeof exportOrders>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportOrdersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportOrders>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getExportOrdersQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof exportOrders>>> = ({
+    signal,
+  }) => exportOrders(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof exportOrders>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ExportOrdersQueryResult = NonNullable<
+  Awaited<ReturnType<typeof exportOrders>>
+>;
+export type ExportOrdersQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Export filtered orders as CSV
+ */
+
+export function useExportOrders<
+  TData = Awaited<ReturnType<typeof exportOrders>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ExportOrdersParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof exportOrders>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getExportOrdersQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Create a new payment order and generate a UPI QR
  */
 export const getCreateOrderUrl = () => {
@@ -546,8 +1232,8 @@ export const getCreateOrderUrl = () => {
 export const createOrder = async (
   createOrderRequest: CreateOrderRequest,
   options?: RequestInit,
-): Promise<CreateOrderResponse> => {
-  return customFetch<CreateOrderResponse>(getCreateOrderUrl(), {
+): Promise<CreateOrderResult> => {
+  return customFetch<CreateOrderResult>(getCreateOrderUrl(), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -718,8 +1404,8 @@ export const simulatePayment = async (
   orderId: string,
   simulatePaymentRequest: SimulatePaymentRequest,
   options?: RequestInit,
-): Promise<SimulatePaymentResponse> => {
-  return customFetch<SimulatePaymentResponse>(getSimulatePaymentUrl(orderId), {
+): Promise<SimulatePaymentResult> => {
+  return customFetch<SimulatePaymentResult>(getSimulatePaymentUrl(orderId), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -792,6 +1478,93 @@ export const useSimulatePayment = <
   TContext
 > => {
   return useMutation(getSimulatePaymentMutationOptions(options));
+};
+
+/**
+ * @summary Initiate a refund for a successful order
+ */
+export const getRefundOrderUrl = (orderId: string) => {
+  return `/api/orders/${orderId}/refund`;
+};
+
+export const refundOrder = async (
+  orderId: string,
+  refundRequest: RefundRequest,
+  options?: RequestInit,
+): Promise<RefundResponse> => {
+  return customFetch<RefundResponse>(getRefundOrderUrl(orderId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(refundRequest),
+  });
+};
+
+export const getRefundOrderMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refundOrder>>,
+    TError,
+    { orderId: string; data: BodyType<RefundRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refundOrder>>,
+  TError,
+  { orderId: string; data: BodyType<RefundRequest> },
+  TContext
+> => {
+  const mutationKey = ["refundOrder"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refundOrder>>,
+    { orderId: string; data: BodyType<RefundRequest> }
+  > = (props) => {
+    const { orderId, data } = props ?? {};
+
+    return refundOrder(orderId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefundOrderMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refundOrder>>
+>;
+export type RefundOrderMutationBody = BodyType<RefundRequest>;
+export type RefundOrderMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Initiate a refund for a successful order
+ */
+export const useRefundOrder = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refundOrder>>,
+    TError,
+    { orderId: string; data: BodyType<RefundRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof refundOrder>>,
+  TError,
+  { orderId: string; data: BodyType<RefundRequest> },
+  TContext
+> => {
+  return useMutation(getRefundOrderMutationOptions(options));
 };
 
 /**

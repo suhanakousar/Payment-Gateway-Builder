@@ -3,11 +3,10 @@
  * Do not edit manually.
  * Api
  * PayLite payment platform API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import type { Merchant } from "./merchant";
 
 export interface AuthResponse {
-  token: string;
   merchant: Merchant;
 }

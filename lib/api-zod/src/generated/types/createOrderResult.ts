@@ -3,11 +3,11 @@
  * Do not edit manually.
  * Api
  * PayLite payment platform API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import type { Order } from "./order";
 
-export interface CreateOrderResponse {
+export interface CreateOrderResult {
   order: Order;
   qrString: string;
   /** Data URL PNG of the QR */

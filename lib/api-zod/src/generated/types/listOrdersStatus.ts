@@ -6,10 +6,12 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export type WebhookPayloadStatus =
-  (typeof WebhookPayloadStatus)[keyof typeof WebhookPayloadStatus];
+export type ListOrdersStatus =
+  (typeof ListOrdersStatus)[keyof typeof ListOrdersStatus];
 
-export const WebhookPayloadStatus = {
+export const ListOrdersStatus = {
+  PENDING: "PENDING",
   SUCCESS: "SUCCESS",
   FAILED: "FAILED",
+  EXPIRED: "EXPIRED",
 } as const;

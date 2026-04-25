@@ -5,10 +5,11 @@
  * PayLite payment platform API
  * OpenAPI spec version: 0.2.0
  */
-import type { WebhookPayloadStatus } from "./webhookPayloadStatus";
 
-export interface WebhookPayload {
-  txnId: string;
-  status: WebhookPayloadStatus;
+export interface RefundRequest {
+  /**
+   * Optional partial refund amount; defaults to full order amount
+   * @minimum 1
+   */
   amount?: number;
 }

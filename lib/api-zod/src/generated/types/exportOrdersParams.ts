@@ -5,15 +5,10 @@
  * PayLite payment platform API
  * OpenAPI spec version: 0.2.0
  */
-import type { ListOrdersStatus } from "./listOrdersStatus";
+import type { ExportOrdersStatus } from "./exportOrdersStatus";
 
-export type ListOrdersParams = {
-  /**
-   * @minimum 1
-   * @maximum 500
-   */
-  limit?: number;
-  status?: ListOrdersStatus;
+export type ExportOrdersParams = {
+  status?: ExportOrdersStatus;
   search?: string;
   from?: Date;
   to?: Date;

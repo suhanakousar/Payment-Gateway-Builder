@@ -6,8 +6,7 @@
  * OpenAPI spec version: 0.2.0
  */
 
-export interface TimeseriesPoint {
-  date: Date;
-  revenue: number;
-  count: number;
+export interface SimulatePaymentResult {
+  ok: boolean;
+  status: string;
 }

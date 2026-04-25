@@ -3,7 +3,7 @@
  * Do not edit manually.
  * Api
  * PayLite payment platform API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 import * as zod from "zod";
 
@@ -15,11 +15,18 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
+ * @summary Issue a CSRF token cookie + value
+ */
+export const GetCsrfTokenResponse = zod.object({
+  csrfToken: zod.string(),
+});
+
+/**
  * @summary Create a new merchant account
  */
 export const signupBodyNameMin = 2;
 
-export const signupBodyPasswordMin = 6;
+export const signupBodyPasswordMin = 8;
 
 export const signupBodyBusinessNameMin = 2;
 
@@ -31,7 +38,6 @@ export const SignupBody = zod.object({
 });
 
 export const SignupResponse = zod.object({
-  token: zod.string(),
   merchant: zod.object({
     id: zod.string(),
     name: zod.string(),
@@ -55,7 +61,6 @@ export const LoginBody = zod.object({
 });
 
 export const LoginResponse = zod.object({
-  token: zod.string(),
   merchant: zod.object({
     id: zod.string(),
     name: zod.string(),
@@ -68,6 +73,13 @@ export const LoginResponse = zod.object({
     approved: zod.boolean(),
     createdAt: zod.coerce.date(),
   }),
+});
+
+/**
+ * @summary Clear the auth cookie
+ */
+export const LogoutResponse = zod.object({
+  ok: zod.boolean(),
 });
 
 /**
@@ -115,10 +127,92 @@ export const UpdateKycResponse = zod.object({
 });
 
 /**
- * @summary List orders for the current merchant
+ * @summary List the merchant's outbound webhooks
+ */
+export const ListMerchantWebhooksResponseItem = zod.object({
+  id: zod.string(),
+  webhookUrl: zod.string(),
+  enabled: zod.boolean(),
+  secretMasked: zod.string().describe('Masked secret, e.g. \"whsec_••••abcd\"'),
+  createdAt: zod.coerce.date(),
+});
+export const ListMerchantWebhooksResponse = zod.array(
+  ListMerchantWebhooksResponseItem,
+);
+
+/**
+ * @summary Register a new outbound webhook URL
+ */
+export const createMerchantWebhookBodyWebhookUrlMin = 8;
+
+export const CreateMerchantWebhookBody = zod.object({
+  webhookUrl: zod.string().url().min(createMerchantWebhookBodyWebhookUrlMin),
+});
+
+export const CreateMerchantWebhookResponse = zod.object({
+  id: zod.string(),
+  webhookUrl: zod.string(),
+  enabled: zod.boolean(),
+  webhookSecret: zod.string().describe("Returned only once at creation"),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete an outbound webhook
+ */
+export const DeleteMerchantWebhookParams = zod.object({
+  webhookId: zod.coerce.string(),
+});
+
+export const DeleteMerchantWebhookResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
+ * @summary Send a test event to the registered webhook
+ */
+export const TestMerchantWebhookParams = zod.object({
+  webhookId: zod.coerce.string(),
+});
+
+export const TestMerchantWebhookResponse = zod.object({
+  ok: zod.boolean(),
+  status: zod.number().nullable(),
+  error: zod.string().nullish(),
+});
+
+/**
+ * @summary Recent outbound webhook delivery attempts
+ */
+export const listWebhookLogsQueryLimitDefault = 50;
+export const listWebhookLogsQueryLimitMax = 200;
+
+export const ListWebhookLogsQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listWebhookLogsQueryLimitMax)
+    .default(listWebhookLogsQueryLimitDefault),
+});
+
+export const ListWebhookLogsResponseItem = zod.object({
+  id: zod.string(),
+  orderId: zod.string(),
+  merchantWebhookId: zod.string().nullish(),
+  attempt: zod.number(),
+  status: zod.string(),
+  responseCode: zod.number().nullish(),
+  responseBody: zod.string().nullish(),
+  error: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+export const ListWebhookLogsResponse = zod.array(ListWebhookLogsResponseItem);
+
+/**
+ * @summary List orders for the current merchant (filterable)
  */
 export const listOrdersQueryLimitDefault = 50;
-export const listOrdersQueryLimitMax = 100;
+export const listOrdersQueryLimitMax = 500;
 
 export const ListOrdersQueryParams = zod.object({
   limit: zod.coerce
@@ -126,6 +220,10 @@ export const ListOrdersQueryParams = zod.object({
     .min(1)
     .max(listOrdersQueryLimitMax)
     .default(listOrdersQueryLimitDefault),
+  status: zod.enum(["PENDING", "SUCCESS", "FAILED", "EXPIRED"]).optional(),
+  search: zod.coerce.string().optional(),
+  from: zod.date().optional(),
+  to: zod.date().optional(),
 });
 
 export const ListOrdersResponseItem = zod.object({
@@ -133,17 +231,40 @@ export const ListOrdersResponseItem = zod.object({
   merchantId: zod.string(),
   orderId: zod.string(),
   txnId: zod.string().nullish(),
+  provider: zod.string(),
   amount: zod.number(),
   status: zod.enum(["PENDING", "SUCCESS", "FAILED", "EXPIRED"]),
   customerName: zod.string().nullish(),
   customerEmail: zod.string().nullish(),
   note: zod.string().nullish(),
   qrString: zod.string().nullish(),
+  fraudFlag: zod.boolean(),
+  fraudReason: zod.string().nullish(),
+  refundStatus: zod
+    .union([
+      zod.literal("INITIATED"),
+      zod.literal("SUCCESS"),
+      zod.literal("FAILED"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  refundAmount: zod.number().nullish(),
+  refundedAt: zod.coerce.date().nullish(),
   createdAt: zod.coerce.date(),
   expiresAt: zod.coerce.date(),
   paidAt: zod.coerce.date().nullish(),
 });
 export const ListOrdersResponse = zod.array(ListOrdersResponseItem);
+
+/**
+ * @summary Export filtered orders as CSV
+ */
+export const ExportOrdersQueryParams = zod.object({
+  status: zod.enum(["PENDING", "SUCCESS", "FAILED", "EXPIRED"]).optional(),
+  search: zod.coerce.string().optional(),
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+});
 
 /**
  * @summary Create a new payment order and generate a UPI QR
@@ -163,12 +284,25 @@ export const CreateOrderResponse = zod.object({
     merchantId: zod.string(),
     orderId: zod.string(),
     txnId: zod.string().nullish(),
+    provider: zod.string(),
     amount: zod.number(),
     status: zod.enum(["PENDING", "SUCCESS", "FAILED", "EXPIRED"]),
     customerName: zod.string().nullish(),
     customerEmail: zod.string().nullish(),
     note: zod.string().nullish(),
     qrString: zod.string().nullish(),
+    fraudFlag: zod.boolean(),
+    fraudReason: zod.string().nullish(),
+    refundStatus: zod
+      .union([
+        zod.literal("INITIATED"),
+        zod.literal("SUCCESS"),
+        zod.literal("FAILED"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    refundAmount: zod.number().nullish(),
+    refundedAt: zod.coerce.date().nullish(),
     createdAt: zod.coerce.date(),
     expiresAt: zod.coerce.date(),
     paidAt: zod.coerce.date().nullish(),
@@ -213,6 +347,27 @@ export const SimulatePaymentBody = zod.object({
 export const SimulatePaymentResponse = zod.object({
   ok: zod.boolean(),
   status: zod.string(),
+});
+
+/**
+ * @summary Initiate a refund for a successful order
+ */
+export const RefundOrderParams = zod.object({
+  orderId: zod.coerce.string(),
+});
+
+export const RefundOrderBody = zod.object({
+  amount: zod
+    .number()
+    .min(1)
+    .optional()
+    .describe("Optional partial refund amount; defaults to full order amount"),
+});
+
+export const RefundOrderResponse = zod.object({
+  orderId: zod.string(),
+  refundStatus: zod.enum(["INITIATED", "SUCCESS", "FAILED"]),
+  refundAmount: zod.number(),
 });
 
 /**

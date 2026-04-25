@@ -3,14 +3,14 @@
  * Do not edit manually.
  * Api
  * PayLite payment platform API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
 
 export interface SignupRequest {
   /** @minLength 2 */
   name: string;
   email: string;
-  /** @minLength 6 */
+  /** @minLength 8 */
   password: string;
   /** @minLength 2 */
   businessName: string;

@@ -3,8 +3,9 @@
  * Do not edit manually.
  * Api
  * PayLite payment platform API
- * OpenAPI spec version: 0.1.0
+ * OpenAPI spec version: 0.2.0
  */
+import type { OrderRefundStatus } from "./orderRefundStatus";
 import type { OrderStatus } from "./orderStatus";
 
 export interface Order {
@@ -12,12 +13,18 @@ export interface Order {
   merchantId: string;
   orderId: string;
   txnId?: string | null;
+  provider: string;
   amount: number;
   status: OrderStatus;
   customerName?: string | null;
   customerEmail?: string | null;
   note?: string | null;
   qrString?: string | null;
+  fraudFlag: boolean;
+  fraudReason?: string | null;
+  refundStatus?: OrderRefundStatus;
+  refundAmount?: number | null;
+  refundedAt?: Date | null;
   createdAt: Date;
   expiresAt: Date;
   paidAt?: Date | null;
