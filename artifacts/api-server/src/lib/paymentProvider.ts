@@ -1,10 +1,18 @@
 import crypto from "node:crypto";
 import QRCode from "qrcode";
 
-const WEBHOOK_SECRET =
-  process.env["WEBHOOK_SECRET"] ?? "paylite-dev-webhook-secret";
+const isProd = process.env["NODE_ENV"] === "production";
+const rawWebhookSecret = process.env["WEBHOOK_SECRET"];
 
-const PROVIDER_VPA = "paylite@upi";
+if (isProd && (!rawWebhookSecret || rawWebhookSecret.length < 24)) {
+  throw new Error(
+    "WEBHOOK_SECRET must be set to a strong value (>=24 chars) in production.",
+  );
+}
+
+const WEBHOOK_SECRET = rawWebhookSecret ?? "paylite-dev-webhook-secret";
+
+const PROVIDER_VPA = process.env["PROVIDER_VPA"] ?? "paylite@upi";
 
 export interface ProviderOrder {
   txnId: string;
@@ -42,7 +50,7 @@ export async function createProviderOrder(input: {
   return { txnId, qrString, qrImage };
 }
 
-export function signWebhookPayload(payloadText: string): string {
+export function signWebhookPayload(payloadText: string | Buffer): string {
   return crypto
     .createHmac("sha256", WEBHOOK_SECRET)
     .update(payloadText)
@@ -50,12 +58,14 @@ export function signWebhookPayload(payloadText: string): string {
 }
 
 export function verifyWebhookSignature(
-  payloadText: string,
+  payload: string | Buffer,
   signature: string,
 ): boolean {
-  // Mock-friendly: accept the dev-default literal for easy local testing.
-  if (signature === "dev-signature") return true;
-  const expected = signWebhookPayload(payloadText);
+  // Dev convenience: accept the literal "dev-signature" outside production only.
+  if (!isProd && signature === "dev-signature") return true;
+  if (!signature || typeof signature !== "string") return false;
+
+  const expected = signWebhookPayload(payload);
   if (expected.length !== signature.length) return false;
   try {
     return crypto.timingSafeEqual(

@@ -1,10 +1,27 @@
 import { Router, type IRouter } from "express";
+import rateLimit from "express-rate-limit";
 import { db, merchantsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { SignupBody, LoginBody } from "@workspace/api-zod";
 import { hashPassword, comparePassword, signToken } from "../lib/auth";
 
 const router: IRouter = Router();
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many attempts. Please try again later." },
+});
+
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many signup attempts. Please try again later." },
+});
 
 function serializeMerchant(m: typeof merchantsTable.$inferSelect) {
   return {
@@ -21,7 +38,13 @@ function serializeMerchant(m: typeof merchantsTable.$inferSelect) {
   };
 }
 
-router.post("/auth/signup", async (req, res) => {
+function isStrongEnoughPassword(pw: string): boolean {
+  if (pw.length < 8) return false;
+  // Require at least one letter and one digit (basic strength check).
+  return /[A-Za-z]/.test(pw) && /\d/.test(pw);
+}
+
+router.post("/auth/signup", signupLimiter, async (req, res) => {
   const parsed = SignupBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid input", details: parsed.error });
@@ -29,10 +52,20 @@ router.post("/auth/signup", async (req, res) => {
   }
   const { name, email, password, businessName } = parsed.data;
 
+  if (!isStrongEnoughPassword(password)) {
+    res.status(400).json({
+      error:
+        "Password must be at least 8 characters and contain a letter and a number.",
+    });
+    return;
+  }
+
+  const normalizedEmail = email.toLowerCase().trim();
+
   const existing = await db
     .select()
     .from(merchantsTable)
-    .where(eq(merchantsTable.email, email.toLowerCase()))
+    .where(eq(merchantsTable.email, normalizedEmail))
     .limit(1);
   if (existing.length > 0) {
     res.status(409).json({ error: "Email already registered" });
@@ -43,10 +76,10 @@ router.post("/auth/signup", async (req, res) => {
   const [created] = await db
     .insert(merchantsTable)
     .values({
-      name,
-      email: email.toLowerCase(),
+      name: name.trim(),
+      email: normalizedEmail,
       passwordHash,
-      businessName,
+      businessName: businessName.trim(),
     })
     .returning();
 
@@ -59,7 +92,7 @@ router.post("/auth/signup", async (req, res) => {
   res.json({ token, merchant: serializeMerchant(created) });
 });
 
-router.post("/auth/login", async (req, res) => {
+router.post("/auth/login", authLimiter, async (req, res) => {
   const parsed = LoginBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid input", details: parsed.error });
@@ -70,7 +103,7 @@ router.post("/auth/login", async (req, res) => {
   const [m] = await db
     .select()
     .from(merchantsTable)
-    .where(eq(merchantsTable.email, email.toLowerCase()))
+    .where(eq(merchantsTable.email, email.toLowerCase().trim()))
     .limit(1);
   if (!m) {
     res.status(401).json({ error: "Invalid credentials" });

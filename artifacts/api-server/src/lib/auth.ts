@@ -2,8 +2,18 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import type { Request, Response, NextFunction } from "express";
 
-const JWT_SECRET = process.env["SESSION_SECRET"] ?? "dev-secret-change-me";
+const isProd = process.env["NODE_ENV"] === "production";
+const rawSecret = process.env["SESSION_SECRET"];
+
+if (isProd && (!rawSecret || rawSecret.length < 24)) {
+  throw new Error(
+    "SESSION_SECRET must be set to a strong value (>=24 chars) in production.",
+  );
+}
+
+const JWT_SECRET = rawSecret ?? "dev-only-secret-do-not-use-in-prod-32xyz";
 const JWT_EXPIRY = "30d";
+const BCRYPT_ROUNDS = 12;
 
 export interface AuthTokenPayload {
   merchantId: string;
@@ -19,7 +29,7 @@ export function verifyToken(token: string): AuthTokenPayload {
 }
 
 export async function hashPassword(plain: string): Promise<string> {
-  return bcrypt.hash(plain, 10);
+  return bcrypt.hash(plain, BCRYPT_ROUNDS);
 }
 
 export async function comparePassword(
