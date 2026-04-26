@@ -1,0 +1,99 @@
+Act as a senior fintech backend architect and system designer.
+
+I have already built a working payment app called PayLite with the following flow:
+
+* Merchant signup/login with JWT authentication
+* KYC collection (currently auto-verified)
+* Order creation with UPI QR generation (mock provider)
+* Payment success via simulate button or webhook
+* Outbound webhooks to merchants (HMAC signed, retry logic)
+* Dashboard with revenue stats
+* PostgreSQL database with tables: merchants, orders, webhook_events, merchant_webhooks, webhook_logs
+
+Now I want to upgrade this into a REAL-WORLD PAYMENT AGGREGATOR system (like Bulkpe or Razorpay-like orchestration layer), where:
+
+* I DO NOT build my own payment gateway
+* I integrate multiple third-party providers (Razorpay, Cashfree, PhonePe, Stripe, etc.)
+* My system acts as an orchestration + routing + analytics + dashboard layer
+
+Your task:
+Design the COMPLETE upgraded system with production-level architecture.
+
+Give me:
+
+1. SYSTEM ARCHITECTURE
+
+* High-level architecture diagram (text explanation)
+* Microservices breakdown (auth, payments, routing, webhook service, settlements, etc.)
+* How services communicate (REST, queues, events)
+
+2. PAYMENT ORCHESTRATION LOGIC
+
+* Smart routing (failover, load balancing, success-rate based routing)
+* How to choose provider dynamically
+* Retry + fallback logic if payment fails
+
+3. THIRD-PARTY INTEGRATIONS
+
+* How to integrate Razorpay, Cashfree, Stripe (API flow)
+* Unified abstraction layer design (adapter pattern)
+* How to normalize different provider responses
+
+4. DATABASE DESIGN (UPDATED)
+
+* New tables needed (transactions, provider_logs, settlements, refunds, disputes)
+* Relationships and schema structure
+
+5. WEBHOOK SYSTEM (ADVANCED)
+
+* Idempotency handling
+* Queue-based processing (Kafka/RabbitMQ)
+* Retry + dead-letter queues
+* Signature verification for each provider
+
+6. SECURITY & COMPLIANCE
+
+* PCI-DSS considerations
+* Tokenization (no raw card storage)
+* Encryption for sensitive data
+* Rate limiting and fraud detection improvements
+
+7. REAL KYC INTEGRATION
+
+* How to integrate PAN verification APIs
+* Bank account validation
+* Async KYC status handling
+
+8. SETTLEMENT SYSTEM
+
+* How money flows from provider → merchant
+* Settlement tracking and reconciliation
+* Ledger system design
+
+9. SCALABILITY DESIGN
+
+* Horizontal scaling strategy
+* Caching (Redis)
+* Handling high TPS
+
+10. FRONTEND DASHBOARD IMPROVEMENTS
+
+* Real-time updates (WebSockets)
+* Payment analytics
+* Filters, reports, export
+
+11. DEPLOYMENT ARCHITECTURE
+
+* Suggest hosting (AWS / VPS like Contabo)
+* CI/CD pipeline
+* Environment separation (dev/test/prod)
+
+12. BONUS
+
+* Suggest 2–3 UNIQUE FEATURES that make PayLite stand out in hackathons
+
+Important:
+
+* Keep explanations simple and clear (student-friendly)
+* But architecture must be REAL INDUSTRY LEVEL
+* Avoid generic answers — give practical flows and examples
