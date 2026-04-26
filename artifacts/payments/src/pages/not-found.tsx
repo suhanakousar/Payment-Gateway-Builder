@@ -1,21 +1,31 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { AlertCircle } from "lucide-react";
+import { Link } from "wouter";
+import { motion } from "framer-motion";
+import { Button } from "@/components/ui/button";
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <Card className="w-full max-w-md mx-4">
-        <CardContent className="pt-6">
-          <div className="flex mb-4 gap-2">
-            <AlertCircle className="h-8 w-8 text-red-500" />
-            <h1 className="text-2xl font-bold text-gray-900">404 Page Not Found</h1>
-          </div>
-
-          <p className="mt-4 text-sm text-gray-600">
-            Did you forget to add the page to the router?
-          </p>
-        </CardContent>
-      </Card>
+    <div className="min-h-screen w-full flex items-center justify-center bg-white p-4">
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+        className="text-center max-w-sm"
+      >
+        <div className="text-xs font-mono uppercase tracking-wide text-neutral-500">
+          Error 404
+        </div>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">
+          We couldn't find that page.
+        </h1>
+        <p className="mt-2 text-sm text-neutral-500">
+          The link may be broken or the page may have moved.
+        </p>
+        <div className="mt-6">
+          <Link href="/">
+            <Button>Take me home</Button>
+          </Link>
+        </div>
+      </motion.div>
     </div>
   );
 }

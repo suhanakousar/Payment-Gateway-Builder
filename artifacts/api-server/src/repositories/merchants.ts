@@ -1,4 +1,4 @@
-import { db } from "@workspace/db/client";
+import { db } from "@workspace/db";
 import { merchantsTable, type Merchant } from "@workspace/db";
 import { eq } from "drizzle-orm";
 

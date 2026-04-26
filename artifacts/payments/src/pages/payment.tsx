@@ -1,230 +1,250 @@
-import React, { useEffect, useState } from "react";
-import { useParams } from "wouter";
-import { formatDistanceToNow, isPast } from "date-fns";
-import { 
-  useGetOrder, 
-  getGetOrderQueryKey,
-  useSimulatePayment
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
-
-import { Card, CardContent, CardHeader, CardFooter } from "@/components/ui/card";
+import { useEffect, useState } from "react";
+import { useRoute } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { motion, AnimatePresence } from "framer-motion";
+import { CheckCircle2, XCircle, Clock, Smartphone, Copy, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, XCircle, Clock, ShieldCheck } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(amount);
+interface OrderPublic {
+  id: string;
+  orderId: string;
+  txnId: string | null;
+  amount: number;
+  status: string;
+  customerName: string | null;
+  qrString: string | null;
+  expiresAt: string;
+  createdAt: string;
 }
 
-export default function PaymentPage() {
-  const { orderId } = useParams<{ orderId: string }>();
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const simulatePayment = useSimulatePayment();
-  const [timeLeft, setTimeLeft] = useState<string>("");
-
-  const { data: order, isLoading, error } = useGetOrder(orderId, {
-    query: { 
-      queryKey: getGetOrderQueryKey(orderId),
-      refetchInterval: (query) => {
-        // Poll every 3 seconds if status is PENDING
-        if (query.state.data?.status === "PENDING") {
-          return 3000;
-        }
-        return false;
-      },
-      enabled: !!orderId
-    }
-  });
-
-  useEffect(() => {
-    if (!order || order.status !== "PENDING") return;
-
-    const expiresAt = new Date(order.expiresAt);
-    
-    const interval = setInterval(() => {
-      if (isPast(expiresAt)) {
-        setTimeLeft("Expired");
-        // Refetch to get the actual expired state from server
-        queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
-        clearInterval(interval);
-      } else {
-        const msLeft = expiresAt.getTime() - Date.now();
-        const minutes = Math.floor(msLeft / 60000);
-        const seconds = Math.floor((msLeft % 60000) / 1000);
-        setTimeLeft(`${minutes}:${seconds.toString().padStart(2, '0')}`);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [order, orderId, queryClient]);
-
-  const handleSimulate = async (outcome: "SUCCESS" | "FAILED") => {
-    try {
-      await simulatePayment.mutateAsync({
-        orderId,
-        data: { outcome }
-      });
-      queryClient.invalidateQueries({ queryKey: getGetOrderQueryKey(orderId) });
-    } catch (err: any) {
-      toast({
-        variant: "destructive",
-        title: "Simulation failed",
-        description: err.message || "Could not simulate payment"
-      });
-    }
-  };
-
-  if (isLoading) {
+function StatusBanner({ status }: { status: string }) {
+  if (status === "SUCCESS") {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="text-gray-500">Loading payment details...</div>
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="border border-emerald-200 bg-emerald-50 text-emerald-800 rounded-md px-4 py-3 flex items-center gap-2"
+      >
+        <CheckCircle2 size={16} /> Payment received. Thanks!
+      </motion.div>
+    );
+  }
+  if (status === "FAILED") {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="border border-rose-200 bg-rose-50 text-rose-800 rounded-md px-4 py-3 flex items-center gap-2"
+      >
+        <XCircle size={16} /> Payment failed. Please try again.
+      </motion.div>
+    );
+  }
+  if (status === "EXPIRED") {
+    return (
+      <div className="border border-neutral-200 bg-neutral-50 text-neutral-700 rounded-md px-4 py-3 flex items-center gap-2">
+        <Clock size={16} /> This payment link has expired.
       </div>
     );
   }
+  return null;
+}
 
-  if (error || !order) {
+export default function PaymentPage() {
+  const [, params] = useRoute("/payment/:orderId");
+  const orderId = params?.orderId ?? "";
+
+  const orderQuery = useQuery({
+    queryKey: ["public-order", orderId],
+    queryFn: () => api<OrderPublic>(`/orders/${orderId}`),
+    enabled: !!orderId,
+    refetchInterval: (q) => {
+      const o = q.state.data;
+      if (!o) return 2_500;
+      return o.status === "PENDING" ? 2_500 : false;
+    },
+  });
+
+  const order = orderQuery.data;
+
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!order?.qrString) {
+      setQrDataUrl(null);
+      return;
+    }
+    import("qrcode").then((mod) => {
+      mod
+        .toDataURL(order.qrString!, { width: 280, margin: 1 })
+        .then((url) => {
+          if (!cancelled) setQrDataUrl(url);
+        })
+        .catch(() => setQrDataUrl(null));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [order?.qrString]);
+
+  const isProd = import.meta.env.PROD;
+
+  async function simulate(outcome: "SUCCESS" | "FAILED") {
+    if (!order?.txnId) return;
+    try {
+      await api(`/orders/${order.txnId}/simulate`, {
+        method: "POST",
+        body: { outcome },
+      });
+      orderQuery.refetch();
+      toast.success(outcome === "SUCCESS" ? "Marked as paid" : "Marked as failed");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Simulation failed");
+    }
+  }
+
+  if (orderQuery.isLoading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md shadow-sm border-gray-200">
-          <CardContent className="pt-6 text-center space-y-4">
-            <XCircle className="mx-auto h-12 w-12 text-red-500" />
-            <h2 className="text-xl font-semibold text-gray-900">Order Not Found</h2>
-            <p className="text-gray-500">The payment link is invalid or has expired.</p>
-          </CardContent>
-        </Card>
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="h-8 w-8 rounded-full border-2 border-neutral-200 border-t-neutral-800 animate-spin" />
+      </div>
+    );
+  }
+  if (orderQuery.isError || !order) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center p-4">
+        <div className="text-center">
+          <h1 className="text-xl font-semibold">Order not found</h1>
+          <p className="text-sm text-neutral-500 mt-1">
+            Check the link or contact the merchant.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4 py-12">
-      <div className="w-full max-w-md space-y-6">
-        
-        {/* Merchant Header */}
-        <div className="text-center space-y-1">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-primary/10 mb-2">
-            <ShieldCheck className="h-6 w-6 text-primary" />
-          </div>
-          <h1 className="text-xl font-semibold text-gray-900">{order.businessName}</h1>
-          <p className="text-sm text-gray-500 font-mono">Order ID: {order.orderId}</p>
+    <div className="min-h-screen bg-neutral-50 flex flex-col">
+      <header className="border-b border-neutral-200 bg-white">
+        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center gap-2">
+          <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+          <span className="font-semibold tracking-tight">PayLite</span>
+          <span className="text-xs text-neutral-500 ml-auto font-mono">
+            {order.orderId}
+          </span>
         </div>
+      </header>
 
-        <Card className="shadow-sm border-gray-200 overflow-hidden">
-          <div className="bg-gray-50/80 p-6 text-center border-b border-gray-100">
-            <p className="text-sm font-medium text-gray-500 mb-1">Amount to Pay</p>
-            <p className="text-4xl font-bold text-gray-900 tracking-tight">
-              {formatCurrency(order.amount)}
-            </p>
-            {order.note && (
-              <p className="text-sm text-gray-600 mt-2 bg-white inline-block px-3 py-1 rounded-md border border-gray-100">
-                "{order.note}"
-              </p>
+      <main className="flex-1 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35 }}
+          className="w-full max-w-md border border-neutral-200 bg-white rounded-xl p-6 space-y-5"
+        >
+          <div className="text-center">
+            <div className="text-xs uppercase tracking-wide text-neutral-500">
+              Amount due
+            </div>
+            <div className="mt-1 text-4xl font-semibold tabular-nums tracking-tight">
+              ₹{order.amount.toLocaleString("en-IN")}
+            </div>
+            {order.customerName && (
+              <div className="mt-1 text-sm text-neutral-600">
+                For {order.customerName}
+              </div>
             )}
           </div>
-          
-          <CardContent className="p-6">
+
+          <AnimatePresence mode="wait">
             {order.status === "PENDING" && (
-              <div className="space-y-6 flex flex-col items-center text-center">
-                <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-100 inline-block">
-                  <img 
-                    src={order.qrImage} 
-                    alt="UPI QR Code" 
-                    className="w-48 h-48 object-contain"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <p className="font-medium text-gray-900">Scan with any UPI app</p>
-                  <div className="flex items-center justify-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-1.5 rounded-full border border-amber-100">
-                    <Clock size={14} />
-                    <span>Expires in {timeLeft || "..."}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {order.status === "SUCCESS" && (
-              <div className="py-8 space-y-4 flex flex-col items-center text-center">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mb-2">
-                  <CheckCircle2 className="h-8 w-8 text-emerald-600" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Payment Successful</h2>
-                  <p className="text-gray-500 mt-1">Your payment has been securely processed.</p>
-                </div>
-              </div>
-            )}
-
-            {order.status === "FAILED" && (
-              <div className="py-8 space-y-4 flex flex-col items-center text-center">
-                <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mb-2">
-                  <XCircle className="h-8 w-8 text-red-600" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Payment Failed</h2>
-                  <p className="text-gray-500 mt-1">We couldn't process your payment. Please try again.</p>
-                </div>
-              </div>
-            )}
-
-            {order.status === "EXPIRED" && (
-              <div className="py-8 space-y-4 flex flex-col items-center text-center">
-                <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-2">
-                  <Clock className="h-8 w-8 text-gray-500" />
-                </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900">Link Expired</h2>
-                  <p className="text-gray-500 mt-1">This payment request is no longer valid.</p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-
-          <div className="bg-gray-50 p-4 flex justify-center border-t border-gray-100">
-            <span className="text-xs font-medium text-gray-400 flex items-center gap-1">
-              <ShieldCheck size={12} />
-              Secured by PayLite
-            </span>
-          </div>
-        </Card>
-
-        {/* Development Simulator Panel */}
-        {order.status === "PENDING" && (
-          <div className="mt-8 border border-dashed border-gray-300 rounded-lg p-4 bg-gray-50/50">
-            <div className="flex items-center justify-between mb-3">
-              <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">Dev Tool</Badge>
-              <span className="text-xs font-mono text-gray-500">Test Environment</span>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">
-              Simulate a UPI webhook response since there is no real bank integration in this sandbox.
-            </p>
-            <div className="flex gap-3">
-              <Button 
-                variant="default" 
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
-                onClick={() => handleSimulate("SUCCESS")}
-                disabled={simulatePayment.isPending}
+              <motion.div
+                key="pending"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="space-y-4"
               >
-                Mark as Paid
-              </Button>
-              <Button 
-                variant="outline" 
-                className="flex-1 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
-                onClick={() => handleSimulate("FAILED")}
-                disabled={simulatePayment.isPending}
+                <div className="border border-neutral-200 rounded-lg p-3 flex items-center justify-center bg-white">
+                  {qrDataUrl ? (
+                    <img src={qrDataUrl} alt="UPI QR code" className="rounded" width={240} height={240} />
+                  ) : (
+                    <div className="h-[240px] w-[240px] flex items-center justify-center text-neutral-400 text-sm">
+                      Generating QR…
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-xs text-neutral-600 justify-center">
+                  <Smartphone size={14} className="text-neutral-400" />
+                  Open any UPI app and scan to pay
+                </div>
+                {order.qrString && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      navigator.clipboard.writeText(order.qrString!);
+                      toast.success("UPI link copied");
+                    }}
+                  >
+                    <Copy size={12} className="mr-1.5" /> Copy UPI link
+                  </Button>
+                )}
+                <div className="flex items-center justify-center gap-1 text-xs text-neutral-500">
+                  <RefreshCw size={11} className="animate-spin-slow" />
+                  Watching for payment…
+                </div>
+              </motion.div>
+            )}
+
+            {order.status !== "PENDING" && (
+              <motion.div
+                key="result"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-3"
               >
-                Mark as Failed
-              </Button>
+                <StatusBanner status={order.status} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {!isProd && order.status === "PENDING" && order.txnId && (
+            <div className="border-t border-neutral-200 pt-4 space-y-2">
+              <div className="text-xs uppercase tracking-wide text-neutral-500 text-center">
+                Demo controls
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => simulate("SUCCESS")}
+                >
+                  Mark as paid
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => simulate("FAILED")}
+                >
+                  Mark as failed
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </motion.div>
+      </main>
+
+      <footer className="border-t border-neutral-200 bg-white">
+        <div className="max-w-3xl mx-auto px-4 py-3 text-xs text-neutral-500 text-center">
+          Secured by PayLite
+        </div>
+      </footer>
     </div>
   );
 }

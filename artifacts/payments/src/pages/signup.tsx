@@ -1,9 +1,10 @@
-import React from "react";
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { useSignup } from "@workspace/api-client-react";
+import { z } from "zod";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -14,139 +15,150 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/hooks/use-toast";
+import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
-const formSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  businessName: z.string().min(2, "Business name must be at least 2 characters"),
+const schema = z.object({
+  name: z.string().min(2, "Name is too short"),
+  businessName: z.string().min(2, "Business name is too short"),
+  email: z.string().email("Invalid email"),
+  password: z
+    .string()
+    .min(8, "At least 8 characters")
+    .refine((v) => /[A-Za-z]/.test(v) && /\d/.test(v), {
+      message: "Must contain a letter and a digit",
+    }),
 });
 
-type FormValues = z.infer<typeof formSchema>;
+type Values = z.infer<typeof schema>;
 
 export default function Signup() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
-  const signup = useSignup();
-
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      name: "",
-      email: "",
-      password: "",
-      businessName: "",
-    },
+  const { setMerchant } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
+  const form = useForm<Values>({
+    resolver: zodResolver(schema),
+    defaultValues: { name: "", businessName: "", email: "", password: "" },
   });
 
-  const onSubmit = async (values: FormValues) => {
+  async function onSubmit(values: Values) {
+    setSubmitting(true);
     try {
-      const response = await signup.mutateAsync({ data: values });
-      localStorage.setItem("paylite_token", response.token);
-      localStorage.setItem("paylite_merchant", JSON.stringify(response.merchant));
-      
-      toast({
-        title: "Account created",
-        description: "Welcome to PayLite!",
+      const res = await api<{ merchant: any }>("/auth/signup", {
+        method: "POST",
+        body: values,
       });
-      
+      setMerchant(res.merchant);
+      toast.success("Account created");
       setLocation("/dashboard");
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Signup failed",
-        description: error.message || "An error occurred during signup",
-      });
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Signup failed");
+    } finally {
+      setSubmitting(false);
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
-          Create your account
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Or{" "}
-          <Link href="/login">
-            <span className="font-medium text-primary hover:text-primary/80 cursor-pointer">
-              sign in to your existing account
+    <div className="min-h-screen bg-white flex flex-col">
+      <header className="border-b border-neutral-200">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+          <Link href="/">
+            <span className="font-semibold tracking-tight cursor-pointer">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 mr-2 align-middle" />
+              PayLite
             </span>
           </Link>
-        </p>
-      </div>
-
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow-sm sm:rounded-lg sm:px-10 border border-gray-200">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Full Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="John Doe" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email address</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="john@example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="businessName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Business Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Acme Corp" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={signup.isPending}
-              >
-                {signup.isPending ? "Creating account..." : "Sign up"}
-              </Button>
-            </form>
-          </Form>
+          <Link href="/login">
+            <Button variant="ghost" size="sm">Sign in</Button>
+          </Link>
         </div>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+          className="w-full max-w-sm"
+        >
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-semibold tracking-tight">Create account</h1>
+            <p className="text-sm text-neutral-500 mt-1">
+              Set up your merchant in under a minute.
+            </p>
+          </div>
+
+          <div className="border border-neutral-200 rounded-xl p-6 bg-white">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Your name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Asha Sharma" autoComplete="name" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="businessName"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Business name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Sundar Tea Stall" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="you@business.in" autoComplete="email" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" autoComplete="new-password" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? "Creating account…" : "Create account"}
+                </Button>
+              </form>
+            </Form>
+          </div>
+
+          <div className="text-xs text-neutral-500 text-center mt-6">
+            Already have an account?{" "}
+            <Link href="/login">
+              <span className="text-neutral-900 underline-offset-2 hover:underline cursor-pointer">
+                Sign in
+              </span>
+            </Link>
+          </div>
+        </motion.div>
       </div>
     </div>
   );

@@ -1,9 +1,10 @@
-import React from "react";
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
+import { motion } from "framer-motion";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { useLogin } from "@workspace/api-client-react";
+import { z } from "zod";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -14,107 +15,121 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { useToast } from "@/hooks/use-toast";
+import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
-const formSchema = z.object({
-  email: z.string().email("Invalid email address"),
-  password: z.string().min(1, "Password is required"),
+const schema = z.object({
+  email: z.string().email("Invalid email"),
+  password: z.string().min(1, "Password required"),
 });
 
-type FormValues = z.infer<typeof formSchema>;
+type Values = z.infer<typeof schema>;
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const { toast } = useToast();
-  const login = useLogin();
-
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
+  const { setMerchant } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
+  const form = useForm<Values>({
+    resolver: zodResolver(schema),
+    defaultValues: { email: "", password: "" },
   });
 
-  const onSubmit = async (values: FormValues) => {
+  async function onSubmit(values: Values) {
+    setSubmitting(true);
     try {
-      const response = await login.mutateAsync({ data: values });
-      localStorage.setItem("paylite_token", response.token);
-      localStorage.setItem("paylite_merchant", JSON.stringify(response.merchant));
-      
-      toast({
-        title: "Login successful",
-        description: "Welcome back!",
+      const res = await api<{ merchant: any; ok: boolean }>("/auth/login", {
+        method: "POST",
+        body: values,
       });
-      
+      setMerchant(res.merchant);
+      toast.success("Welcome back");
       setLocation("/dashboard");
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Login failed",
-        description: error.message || "Invalid credentials",
-      });
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Sign-in failed");
+    } finally {
+      setSubmitting(false);
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-bold tracking-tight text-gray-900">
-          Sign in to your account
-        </h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Or{" "}
-          <Link href="/signup">
-            <span className="font-medium text-primary hover:text-primary/80 cursor-pointer">
-              create a new account
+    <div className="min-h-screen bg-white flex flex-col">
+      <header className="border-b border-neutral-200">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+          <Link href="/">
+            <span className="font-semibold tracking-tight cursor-pointer">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 mr-2 align-middle" />
+              PayLite
             </span>
           </Link>
-        </p>
-      </div>
-
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow-sm sm:rounded-lg sm:px-10 border border-gray-200">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email address</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="john@example.com" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={login.isPending}
-              >
-                {login.isPending ? "Signing in..." : "Sign in"}
-              </Button>
-            </form>
-          </Form>
+          <Link href="/signup">
+            <Button variant="ghost" size="sm">Create account</Button>
+          </Link>
         </div>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+          className="w-full max-w-sm"
+        >
+          <div className="text-center mb-8">
+            <h1 className="text-2xl font-semibold tracking-tight">Sign in</h1>
+            <p className="text-sm text-neutral-500 mt-1">
+              Welcome back to your dashboard.
+            </p>
+          </div>
+
+          <div className="border border-neutral-200 rounded-xl p-6 bg-white">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="you@business.in" autoComplete="email" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" autoComplete="current-password" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <Button type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? "Signing in…" : "Sign in"}
+                </Button>
+              </form>
+            </Form>
+          </div>
+
+          <div className="text-xs text-neutral-500 text-center mt-6">
+            Don't have an account?{" "}
+            <Link href="/signup">
+              <span className="text-neutral-900 underline-offset-2 hover:underline cursor-pointer">
+                Sign up
+              </span>
+            </Link>
+          </div>
+
+          <div className="mt-4 text-[11px] text-neutral-400 text-center font-mono">
+            demo@paylite.in / demo1234
+          </div>
+        </motion.div>
       </div>
     </div>
   );

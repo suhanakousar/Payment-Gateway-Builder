@@ -1,9 +1,15 @@
-import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
 import cors from "cors";
 import helmet from "helmet";
+import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
-import { logger } from "./lib/logger";
+import { logger } from "./utils/logger";
 
 const app: Express = express();
 const isProd = process.env["NODE_ENV"] === "production";
@@ -31,21 +37,26 @@ app.use(
         };
       },
       res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
+        return { statusCode: res.statusCode };
       },
     },
   }),
 );
 
-const corsOrigin = process.env["CORS_ORIGIN"];
+const corsOriginEnv = process.env["CORS_ORIGIN"];
+const corsOrigin = corsOriginEnv
+  ? corsOriginEnv.split(",").map((s) => s.trim())
+  : true;
+
 app.use(
   cors({
-    origin: corsOrigin ? corsOrigin.split(",").map((s) => s.trim()) : true,
-    credentials: false,
+    origin: corsOrigin,
+    credentials: true,
+    exposedHeaders: ["X-CSRF-Token"],
   }),
 );
+
+app.use(cookieParser());
 
 app.use(
   express.json({

@@ -1,393 +1,276 @@
-import React, { useState } from "react";
-import { format } from "date-fns";
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip as RechartsTooltip, 
-  ResponsiveContainer 
-} from "recharts";
-import { useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
-import { 
-  useDashboardSummary, 
-  getDashboardSummaryQueryKey,
-  useDashboardTimeseries,
-  getDashboardTimeseriesQueryKey,
-  useListOrders,
-  getListOrdersQueryKey,
-  useCreateOrder
-} from "@workspace/api-client-react";
-
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
+import {
+  TrendingUp,
+  AlertTriangle,
+  Receipt,
+  CheckCircle2,
+  Clock,
+  XCircle,
+  ArrowUpRight,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { Plus, CreditCard, Activity, TrendingUp, CheckCircle, Clock } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
 
-const createOrderSchema = z.object({
-  orderId: z.string().min(1, "Reference ID is required"),
-  amount: z.coerce.number().min(1, "Amount must be at least ₹1"),
-  customerName: z.string().optional(),
-  customerEmail: z.string().email("Invalid email").optional().or(z.literal("")),
-  note: z.string().optional(),
-});
+interface Summary {
+  totalOrders: number;
+  paidOrders: number;
+  pendingOrders: number;
+  failedOrders: number;
+  refundedOrders: number;
+  flaggedOrders: number;
+  totalCollectedPaise: number;
+  todayCollectedPaise: number;
+  successRate: number;
+}
 
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat("en-IN", {
+interface OrderRow {
+  id: string;
+  orderId: string;
+  amount: number;
+  status: string;
+  customerName: string | null;
+  fraudFlag: boolean;
+  createdAt: string;
+}
+
+function rupees(paise: number) {
+  return (paise / 100).toLocaleString("en-IN", {
     style: "currency",
     currency: "INR",
     maximumFractionDigits: 0,
-  }).format(amount);
+  });
 }
 
-function StatusBadge({ status }: { status: string }) {
-  switch (status) {
-    case "SUCCESS":
-      return <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50">Success</Badge>;
-    case "PENDING":
-      return <Badge className="bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-50">Pending</Badge>;
-    case "FAILED":
-      return <Badge className="bg-red-50 text-red-700 border-red-200 hover:bg-red-50">Failed</Badge>;
-    case "EXPIRED":
-      return <Badge className="bg-gray-100 text-gray-700 border-gray-200 hover:bg-gray-100">Expired</Badge>;
-    default:
-      return <Badge variant="outline">{status}</Badge>;
-  }
+function StatCard({
+  title,
+  value,
+  hint,
+  icon: Icon,
+  delay = 0,
+}: {
+  title: string;
+  value: string | number;
+  hint?: string;
+  icon: typeof TrendingUp;
+  delay?: number;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35, delay, ease: "easeOut" }}
+      className="border border-neutral-200 bg-white rounded-xl p-5 hover:border-neutral-300 transition-colors"
+    >
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-xs uppercase tracking-wide text-neutral-500">
+          {title}
+        </span>
+        <Icon size={14} className="text-neutral-400" />
+      </div>
+      <div className="text-2xl font-semibold tracking-tight tabular-nums">
+        {value}
+      </div>
+      {hint && (
+        <div className="text-xs text-neutral-500 mt-1.5">{hint}</div>
+      )}
+    </motion.div>
+  );
+}
+
+const STATUS_TONE: Record<string, string> = {
+  SUCCESS: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  PENDING: "bg-amber-50 text-amber-700 border-amber-200",
+  FAILED: "bg-rose-50 text-rose-700 border-rose-200",
+  EXPIRED: "bg-neutral-100 text-neutral-600 border-neutral-200",
+  REFUNDED: "bg-violet-50 text-violet-700 border-violet-200",
+};
+
+function StatusPill({ value }: { value: string }) {
+  const cls = STATUS_TONE[value] ?? STATUS_TONE.PENDING;
+  return (
+    <span className={`inline-block text-[10px] font-medium px-1.5 py-0.5 rounded border ${cls}`}>
+      {value}
+    </span>
+  );
 }
 
 export default function Dashboard() {
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const createOrder = useCreateOrder();
-
-  const { data: summary, isLoading: isLoadingSummary } = useDashboardSummary({
-    query: { queryKey: getDashboardSummaryQueryKey() }
+  const { merchant } = useAuth();
+  const summaryQuery = useQuery({
+    queryKey: ["dashboard", "summary"],
+    queryFn: () => api<Summary>("/dashboard/summary"),
+    refetchInterval: 15_000,
+  });
+  const recentQuery = useQuery({
+    queryKey: ["orders", "recent"],
+    queryFn: () => api<OrderRow[]>("/orders", { query: { limit: 8 } }),
+    refetchInterval: 15_000,
   });
 
-  const { data: timeseries, isLoading: isLoadingTimeseries } = useDashboardTimeseries({ days: 30 }, {
-    query: { queryKey: getDashboardTimeseriesQueryKey({ days: 30 }) }
-  });
-
-  const { data: orders, isLoading: isLoadingOrders } = useListOrders({ limit: 5 }, {
-    query: { queryKey: getListOrdersQueryKey({ limit: 5 }) }
-  });
-
-  const form = useForm<z.infer<typeof createOrderSchema>>({
-    resolver: zodResolver(createOrderSchema),
-    defaultValues: {
-      orderId: `REF-${Math.floor(Math.random() * 10000)}`,
-      amount: 100,
-      customerName: "",
-      customerEmail: "",
-      note: "",
-    },
-  });
-
-  const onSubmit = async (values: z.infer<typeof createOrderSchema>) => {
-    try {
-      const response = await createOrder.mutateAsync({
-        data: {
-          ...values,
-          customerEmail: values.customerEmail || undefined,
-        }
-      });
-      
-      toast({
-        title: "Order created successfully",
-        description: "Opening payment page...",
-      });
-      
-      setCreateDialogOpen(false);
-      form.reset();
-      
-      // Invalidate queries
-      queryClient.invalidateQueries({ queryKey: getListOrdersQueryKey({ limit: 5 }) });
-      queryClient.invalidateQueries({ queryKey: getDashboardSummaryQueryKey() });
-      
-      // Open payment page in new tab
-      window.open(`/payment/${response.order.orderId}`, "_blank");
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Failed to create order",
-        description: error.message || "An error occurred",
-      });
-    }
-  };
+  const summary = summaryQuery.data;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="max-w-6xl mx-auto space-y-6">
+      <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500">Overview of your payment activity</p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Welcome back, {merchant?.name?.split(" ")[0] ?? "there"}
+          </h1>
+          <p className="text-sm text-neutral-500 mt-1">
+            Here's a snapshot of {merchant?.businessName ?? "your business"}.
+          </p>
         </div>
-        <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="shrink-0 gap-2">
-              <Plus size={16} />
-              Create Order
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>Create Payment Order</DialogTitle>
-              <DialogDescription>
-                Generate a new UPI QR code for a customer to scan and pay.
-              </DialogDescription>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 pt-4">
-                <FormField
-                  control={form.control}
-                  name="orderId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Reference ID</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="amount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Amount (₹)</FormLabel>
-                      <FormControl>
-                        <Input type="number" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="grid grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="customerName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Customer Name (Optional)</FormLabel>
-                        <FormControl>
-                          <Input {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+        <Link href="/orders">
+          <Button variant="outline" size="sm">
+            View all orders <ArrowUpRight size={14} className="ml-1" />
+          </Button>
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          title="Today's revenue"
+          value={summary ? rupees(summary.todayCollectedPaise) : "—"}
+          hint="Successful orders today"
+          icon={TrendingUp}
+          delay={0}
+        />
+        <StatCard
+          title="Lifetime revenue"
+          value={summary ? rupees(summary.totalCollectedPaise) : "—"}
+          hint={summary ? `${summary.paidOrders} paid orders` : undefined}
+          icon={Receipt}
+          delay={0.05}
+        />
+        <StatCard
+          title="Success rate"
+          value={summary ? `${summary.successRate}%` : "—"}
+          hint={summary ? `${summary.totalOrders} total` : undefined}
+          icon={CheckCircle2}
+          delay={0.1}
+        />
+        <StatCard
+          title="Flagged"
+          value={summary?.flaggedOrders ?? "—"}
+          hint="Fraud signals triggered"
+          icon={AlertTriangle}
+          delay={0.15}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.18 }}
+          className="border border-neutral-200 bg-white rounded-xl p-5 flex items-center gap-3"
+        >
+          <Clock size={18} className="text-amber-500" />
+          <div>
+            <div className="text-xs uppercase tracking-wide text-neutral-500">Pending</div>
+            <div className="text-xl font-semibold tabular-nums">{summary?.pendingOrders ?? "—"}</div>
+          </div>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.22 }}
+          className="border border-neutral-200 bg-white rounded-xl p-5 flex items-center gap-3"
+        >
+          <XCircle size={18} className="text-rose-500" />
+          <div>
+            <div className="text-xs uppercase tracking-wide text-neutral-500">Failed</div>
+            <div className="text-xl font-semibold tabular-nums">{summary?.failedOrders ?? "—"}</div>
+          </div>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.26 }}
+          className="border border-neutral-200 bg-white rounded-xl p-5 flex items-center gap-3"
+        >
+          <Receipt size={18} className="text-violet-500" />
+          <div>
+            <div className="text-xs uppercase tracking-wide text-neutral-500">Refunded</div>
+            <div className="text-xl font-semibold tabular-nums">{summary?.refundedOrders ?? "—"}</div>
+          </div>
+        </motion.div>
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35, delay: 0.3 }}
+        className="border border-neutral-200 bg-white rounded-xl overflow-hidden"
+      >
+        <div className="px-5 py-4 flex items-center justify-between border-b border-neutral-200">
+          <div>
+            <h2 className="font-medium text-sm">Recent orders</h2>
+            <p className="text-xs text-neutral-500">Latest 8 orders for your account</p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase tracking-wide text-neutral-500 bg-neutral-50">
+              <tr>
+                <th className="text-left font-medium px-5 py-2.5">Order</th>
+                <th className="text-left font-medium px-5 py-2.5">Customer</th>
+                <th className="text-right font-medium px-5 py-2.5">Amount</th>
+                <th className="text-left font-medium px-5 py-2.5">Status</th>
+                <th className="text-left font-medium px-5 py-2.5">When</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentQuery.isLoading && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-8 text-center text-neutral-400 text-sm">
+                    Loading…
+                  </td>
+                </tr>
+              )}
+              {!recentQuery.isLoading && recentQuery.data?.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-12 text-center text-neutral-500 text-sm">
+                    No orders yet. Create one from the Orders tab.
+                  </td>
+                </tr>
+              )}
+              {recentQuery.data?.map((o, i) => (
+                <motion.tr
+                  key={o.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: i * 0.03 }}
+                  className="border-t border-neutral-100 hover:bg-neutral-50/60"
+                >
+                  <td className="px-5 py-3 font-mono text-xs">
+                    <Link href="/orders">
+                      <span className="cursor-pointer hover:underline">{o.orderId}</span>
+                    </Link>
+                    {o.fraudFlag && (
+                      <span className="ml-2 inline-block text-[10px] text-rose-600 border border-rose-200 bg-rose-50 px-1.5 rounded">
+                        flagged
+                      </span>
                     )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="customerEmail"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email (Optional)</FormLabel>
-                        <FormControl>
-                          <Input type="email" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                <FormField
-                  control={form.control}
-                  name="note"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Internal Note (Optional)</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <div className="flex justify-end gap-3 pt-2">
-                  <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={createOrder.isPending}>
-                    {createOrder.isPending ? "Creating..." : "Create Order"}
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between space-y-0 pb-2">
-              <p className="text-sm font-medium text-gray-500">Total Revenue</p>
-              <TrendingUp className="h-4 w-4 text-gray-400" />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <div className="text-2xl font-bold tracking-tight text-gray-900">
-                {isLoadingSummary ? "..." : formatCurrency(summary?.totalRevenue || 0)}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between space-y-0 pb-2">
-              <p className="text-sm font-medium text-gray-500">Today's Revenue</p>
-              <Activity className="h-4 w-4 text-gray-400" />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <div className="text-2xl font-bold tracking-tight text-gray-900">
-                {isLoadingSummary ? "..." : formatCurrency(summary?.todayRevenue || 0)}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between space-y-0 pb-2">
-              <p className="text-sm font-medium text-gray-500">Success Rate</p>
-              <CheckCircle className="h-4 w-4 text-gray-400" />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <div className="text-2xl font-bold tracking-tight text-gray-900">
-                {isLoadingSummary ? "..." : `${Math.round(summary?.successRate || 0)}%`}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="shadow-sm">
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between space-y-0 pb-2">
-              <p className="text-sm font-medium text-gray-500">Total Orders</p>
-              <CreditCard className="h-4 w-4 text-gray-400" />
-            </div>
-            <div className="flex items-baseline gap-2">
-              <div className="text-2xl font-bold tracking-tight text-gray-900">
-                {isLoadingSummary ? "..." : summary?.totalOrders || 0}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-7">
-        {/* Chart */}
-        <Card className="md:col-span-4 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-base font-medium">Revenue Over Time (30 Days)</CardTitle>
-          </CardHeader>
-          <CardContent className="pl-0 pb-4 h-[300px]">
-            {isLoadingTimeseries ? (
-              <div className="h-full w-full flex items-center justify-center text-gray-400">Loading chart...</div>
-            ) : timeseries && timeseries.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={timeseries} margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                  <XAxis 
-                    dataKey="date" 
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 12, fill: '#6B7280' }}
-                    tickFormatter={(val) => format(new Date(val), "MMM d")}
-                  />
-                  <YAxis 
-                    axisLine={false}
-                    tickLine={false}
-                    tick={{ fontSize: 12, fill: '#6B7280' }}
-                    tickFormatter={(val) => `₹${val}`}
-                  />
-                  <RechartsTooltip 
-                    contentStyle={{ borderRadius: '8px', border: '1px solid #E5E7EB', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }}
-                    formatter={(value: number) => [`₹${value}`, 'Revenue']}
-                    labelFormatter={(label) => format(new Date(label), "MMM d, yyyy")}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="revenue" 
-                    stroke="hsl(var(--primary))" 
-                    strokeWidth={2}
-                    dot={false}
-                    activeDot={{ r: 4 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full w-full flex items-center justify-center text-gray-400 text-sm">
-                No data available for this period
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent Orders */}
-        <Card className="md:col-span-3 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base font-medium">Recent Orders</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoadingOrders ? (
-              <div className="py-8 text-center text-sm text-gray-500">Loading orders...</div>
-            ) : orders && orders.length > 0 ? (
-              <div className="space-y-4">
-                {orders.map((order) => (
-                  <div 
-                    key={order.id} 
-                    className="flex items-center justify-between group cursor-pointer rounded-lg hover:bg-gray-50 -mx-2 px-2 py-1 transition-colors"
-                    onClick={() => window.open(`/payment/${order.orderId}`, "_blank")}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`p-2 rounded-full ${order.status === 'SUCCESS' ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>
-                        {order.status === 'SUCCESS' ? <CheckCircle size={16} /> : <Clock size={16} />}
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">{order.orderId}</p>
-                        <p className="text-xs text-gray-500">{format(new Date(order.createdAt), "MMM d, h:mm a")}</p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-medium text-gray-900">{formatCurrency(order.amount)}</p>
-                      <StatusBadge status={order.status} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="py-8 text-center text-sm text-gray-500">
-                No orders yet. Create one to get started.
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                  </td>
+                  <td className="px-5 py-3 text-neutral-700">{o.customerName ?? "—"}</td>
+                  <td className="px-5 py-3 text-right tabular-nums">
+                    ₹{o.amount.toLocaleString("en-IN")}
+                  </td>
+                  <td className="px-5 py-3"><StatusPill value={o.status} /></td>
+                  <td className="px-5 py-3 text-neutral-500 text-xs">
+                    {new Date(o.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                  </td>
+                </motion.tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </motion.div>
     </div>
   );
 }
