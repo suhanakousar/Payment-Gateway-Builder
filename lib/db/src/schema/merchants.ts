@@ -11,7 +11,11 @@ export const merchantsTable = pgTable("merchants", {
   pan: text("pan"),
   bankAccount: text("bank_account"),
   ifsc: text("ifsc"),
-  kycStatus: text("kyc_status").notNull().default("PENDING"),
+  // KYC workflow: NOT_STARTED -> SUBMITTED -> UNDER_REVIEW -> APPROVED | REJECTED
+  kycStatus: text("kyc_status").notNull().default("NOT_STARTED"),
+  kycSubmittedAt: timestamp("kyc_submitted_at", { withTimezone: true }),
+  kycReviewedAt: timestamp("kyc_reviewed_at", { withTimezone: true }),
+  kycRejectionReason: text("kyc_rejection_reason"),
   approved: boolean("approved").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()

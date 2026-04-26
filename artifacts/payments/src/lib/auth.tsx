@@ -10,6 +10,9 @@ export interface Merchant {
   bankAccount: string | null;
   ifsc: string | null;
   kycStatus: string;
+  kycSubmittedAt?: string | null;
+  kycReviewedAt?: string | null;
+  kycRejectionReason?: string | null;
   approved: boolean;
   createdAt: string;
 }

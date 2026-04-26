@@ -8,13 +8,20 @@ export async function receive(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: "Missing raw body" });
     return;
   }
-  const sigHeader = req.header("x-paylite-signature") ?? req.header("x-signature");
+  const providerName = (req.query["provider"] as string | undefined) ?? "mock";
+  // Hand the entire header set to the adapter — different providers use
+  // different header names (x-razorpay-signature, x-webhook-signature, …).
+  const headers: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(req.headers)) {
+    headers[k.toLowerCase()] = Array.isArray(v) ? v[0] : v;
+  }
   try {
     const result = await service.processProviderWebhook({
       rawBody: raw,
-      signature: sigHeader ?? undefined,
+      headers,
+      providerName,
     });
-    res.json({ ok: true, deduped: result.deduped });
+    res.json({ ok: true, deduped: result.deduped, provider: result.provider });
   } catch (e) {
     if (e instanceof service.WebhookError) {
       res.status(e.status).json({ error: e.message });

@@ -6,6 +6,8 @@ import { ordersTable } from "@workspace/db";
 export async function insertLog(values: {
   orderId: string;
   merchantWebhookId: string | null;
+  event: string;
+  requestBody: string;
   attempt: number;
   status: string;
   responseCode: number | null;
@@ -25,8 +27,10 @@ export async function listForMerchant(opts: {
       id: webhookLogsTable.id,
       orderId: webhookLogsTable.orderId,
       merchantWebhookId: webhookLogsTable.merchantWebhookId,
+      event: webhookLogsTable.event,
       attempt: webhookLogsTable.attempt,
       status: webhookLogsTable.status,
+      requestBody: webhookLogsTable.requestBody,
       responseCode: webhookLogsTable.responseCode,
       responseBody: webhookLogsTable.responseBody,
       error: webhookLogsTable.error,
@@ -43,9 +47,6 @@ export async function listFailedReady(opts: {
   maxAttempts: number;
   limit: number;
 }): Promise<WebhookLog[]> {
-  // Get the most recent log per (orderId, merchantWebhookId) and pick those
-  // with status RETRY whose attempt < maxAttempts. Simple approach: just
-  // pull recent RETRY rows; the delivery service deduplicates.
   return db
     .select()
     .from(webhookLogsTable)

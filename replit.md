@@ -28,28 +28,78 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 
 ## PayLite (artifacts/payments + artifacts/api-server)
 
-Mini Razorpay-like UPI payment platform for Indian merchants.
+Razorpay-like UPI payment aggregator for Indian merchants. Production-shaped backend (real-style provider adapters, smart routing, double-entry ledger, settlements, disputes, KYC) with offline sandbox stubs so the integration code is real but works without external network.
 
-### Features
-- Merchant signup / login (JWT in `localStorage`, password hashing via bcryptjs)
-- KYC profile (PAN, bank account, IFSC) on `/kyc`
-- Order CRUD: create dynamic UPI QR orders via mock provider (`qrcode` lib)
-- Public payment page `/pay/:orderId` with countdown (5 min expiry), QR display, status polling, and a built-in "simulate payment" panel
-- Webhook endpoint `/api/webhook/payment` with HMAC-SHA256 signature verification (accepts literal `dev-signature` in dev) and idempotency via `webhook_events` unique on `txn_id`
-- Merchant dashboard: KPI cards, 14-day revenue chart (Recharts), recent orders
-- Lazy `expireStaleOrders()` flips PENDING → EXPIRED on read
+### Auth & session
+- Cookie-session (httpOnly, signed) + CSRF token rotation on login (`GET /api/auth/csrf`)
+- Password hashing via bcryptjs
+
+### Provider adapters & smart router (`artifacts/api-server/src/providers/`)
+- `razorpay.ts` — mints `rzp_order_<id>` via local sandbox mirroring Razorpay request/response shape; HMAC-SHA256 webhook signing scheme
+- `cashfree.ts` — same shape with Cashfree's signing scheme
+- `mock.ts` — fallback `qr_<id>` provider
+- `router.ts` — weighted selection (razorpay 70 / cashfree 25 / mock 5), per-provider circuit breaker (opens after 3 consecutive failures, 60s cool-down), automatic fallback to next healthy provider on `createQR` failure
+- `/api/dashboard/provider-health` exposes per-provider success rate + circuit state
+- Webhook receiver `controllers/providerWebhook.ts` routes by `?provider=razorpay|cashfree` and verifies with the matching scheme
+
+### Settlements + double-entry ledger
+- Fee calc in `services/fees.ts`: 2% + ₹2 GST in paise, stored on `orders.fee_paise` at SUCCESS time
+- T+1 settlement job groups merchant's previous-day SUCCESS orders, creates one `settlements` row + double-entry `ledger_entries` (DEBIT `gateway_payable`, CREDIT `merchant_payable` and `fee_income`)
+- `POST /api/settlements/run` — manual trigger (dev)
+- `GET /api/settlements` — pending + last 30 days for `/settlements` page
+- Repository uses `inArray()` from drizzle-orm for batch lookups (do NOT use `ANY(${array})`)
+
+### Disputes
+- Status workflow: `OPEN → UNDER_REVIEW → WON | LOST`, 7-day evidence deadline
+- Provider webhook event `payment.disputed` creates dispute and blocks refunds while open (refund returns 409)
+- `POST /api/disputes/:id/evidence` (text + 1 doc URL) → `UNDER_REVIEW`
+- `POST /api/disputes/:id/resolve` with `outcome: WON|LOST`; on WON, sets `resolutionNote = "Issuer accepted merchant evidence"`
+- `/disputes` page lists all; dashboard shows open count + alert banner
+
+### KYC workflow
+- Status: `NOT_STARTED → SUBMITTED → UNDER_REVIEW → APPROVED | REJECTED`
+- `kyc_documents` table holds PAN + cancelled-cheque metadata with simulated upload URL (data URI accepted)
+- Auto-approve in dev after 5s for demo
+- `services/orders.ts` blocks order creation > ₹10,000 unless status is `APPROVED` (also accepts legacy `VERIFIED`)
+- `/kyc` page redesigned as a stepper with doc upload
+
+### Dashboard polish (`artifacts/payments/src/pages/dashboard.tsx`)
+- 14-day revenue area chart (Recharts)
+- Payment method donut + provider distribution donut
+- Open-dispute alert banner
+- Settlement summary card (pending + last batch)
+- Provider health card
+- Webhooks page: row → drawer with full event/requestBody/response payload
+
+### Order flow notes
+- `POST /api/orders` body: `{orderId, amount, customerName?, customerEmail?, note?}` — `orderId` is the merchant's reference (REQUIRED)
+- Response includes provider `txnId` (e.g. `rzp_order_…`, `qr_…`)
+- Simulate endpoint: `POST /api/orders/:txnId/simulate` body `{outcome: "SUCCESS"|"FAILED"}` — note `:txnId` not order id
+- CSRF rotates after login — re-fetch `/api/auth/csrf` after `POST /api/auth/login`
+- Lazy `expireStaleOrders()` flips PENDING → EXPIRED on read (5 min expiry)
 
 ### Demo credentials
 - email: `demo@paylite.in`
 - password: `demo1234`
-- business: Sundar Tea Stall (4 historical orders pre-seeded)
+- business: Sundar Tea Stall (4 historical orders pre-seeded, KYC APPROVED)
 
 ### Env vars
-- `SESSION_SECRET` — JWT signing secret (provisioned)
-- `WEBHOOK_SECRET` — HMAC secret for payment webhooks (optional in dev)
+- `SESSION_SECRET` — session signing secret (provisioned)
+- `WEBHOOK_SECRET` — HMAC secret for payment webhooks (optional in dev; literal `dev-signature` accepted)
 - `DATABASE_URL` — Postgres (provisioned)
 
 ### DB tables (lib/db/src/schema)
-- `merchants` — auth + KYC fields
-- `orders` — amount, currency, status, upi_qr_data, expires_at, txn_id
-- `webhook_events` — idempotency log keyed on `txn_id`
+- `merchants` — auth + KYC status (`kyc_status`, `kyc_submitted_at`, `kyc_reviewed_at`, `kyc_rejection_reason`)
+- `kyc_documents` — PAN, cancelled cheque metadata + URL
+- `orders` — amount, currency, status, upi_qr_data, expires_at, txn_id, `payment_method`, `provider`, `fee_paise`, `settled_at`, `settlement_id`
+- `settlements` — daily merchant batch (utr, gross, fee, net, status)
+- `ledger_entries` — double-entry rows (`account`, `direction`, `amount_paise`, `ref_settlement_id`/`ref_order_id`)
+- `disputes` — status, reason, amount, evidence_text, evidence_url, deadline_at, resolution_note
+- `webhook_events` — idempotency log keyed on `txn_id`, stores `event` + `request_body` for the inspector drawer
+
+### Workflows
+- `API Server` — `PORT=8080 pnpm --filter @workspace/api-server run dev` (restart after backend changes)
+- `Start application` — `PORT=19926 BASE_PATH=/ pnpm --filter @workspace/payments run dev` (Vite hot-reloads frontend)
+
+### E2E verified (2026-04-26)
+Login → create ₹350 order routed to `razorpay` → simulate SUCCESS → raise dispute → submit evidence (→ UNDER_REVIEW) → refund correctly BLOCKED (409) while dispute open → resolve WON → run settlement (2 batches with proper double-entry ledger). Dashboard summary reflects openDisputes + pendingSettlement.

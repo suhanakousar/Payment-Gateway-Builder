@@ -11,6 +11,8 @@ import Dashboard from "@/pages/dashboard";
 import Orders from "@/pages/orders";
 import Webhooks from "@/pages/webhooks";
 import Kyc from "@/pages/kyc";
+import Settlements from "@/pages/settlements";
+import Disputes from "@/pages/disputes";
 import PaymentPage from "@/pages/payment";
 import NotFound from "@/pages/not-found";
 import Layout from "@/components/layout";
@@ -56,6 +58,8 @@ function AppRouter() {
       <Route path="/orders">{() => <Protected component={Orders} />}</Route>
       <Route path="/webhooks">{() => <Protected component={Webhooks} />}</Route>
       <Route path="/kyc">{() => <Protected component={Kyc} />}</Route>
+      <Route path="/settlements">{() => <Protected component={Settlements} />}</Route>
+      <Route path="/disputes">{() => <Protected component={Disputes} />}</Route>
 
       <Route component={NotFound} />
     </Switch>

@@ -6,6 +6,10 @@ import * as refund from "./controllers/refund";
 import * as merchantWebhooks from "./controllers/merchantWebhooks";
 import * as providerWebhook from "./controllers/providerWebhook";
 import * as dashboard from "./controllers/dashboard";
+import * as settlements from "./controllers/settlements";
+import * as disputes from "./controllers/disputes";
+import * as kyc from "./controllers/kyc";
+import * as providers from "./controllers/providers";
 import * as health from "./controllers/health";
 import { requireAuth } from "./middlewares/auth";
 import { csrfProtection } from "./middlewares/csrf";
@@ -47,6 +51,11 @@ router.post("/auth/logout", csrfProtection, auth.logout);
 router.get("/auth/me", requireAuth, auth.me);
 router.put("/merchant/kyc", requireAuth, csrfProtection, auth.updateKyc);
 
+// KYC docs
+router.get("/merchant/kyc/docs", requireAuth, kyc.listDocs);
+router.post("/merchant/kyc/docs", requireAuth, csrfProtection, kyc.uploadDoc);
+router.delete("/merchant/kyc/docs/:id", requireAuth, csrfProtection, kyc.deleteDoc);
+
 router.get("/merchant/webhooks", requireAuth, merchantWebhooks.list);
 router.post("/merchant/webhooks", requireAuth, csrfProtection, merchantWebhooks.create);
 router.delete("/merchant/webhooks/:id", requireAuth, csrfProtection, merchantWebhooks.remove);
@@ -66,5 +75,23 @@ if (!isProd) {
 router.post("/webhook", webhookLimiter, providerWebhook.receive);
 
 router.get("/dashboard/summary", requireAuth, dashboard.summary);
+router.get("/dashboard/timeseries", requireAuth, dashboard.timeseries);
+router.get("/dashboard/methods", requireAuth, dashboard.methods);
+router.get("/dashboard/providers", requireAuth, dashboard.providers);
+router.get("/dashboard/provider-health", requireAuth, providers.health);
+
+router.get("/settlements", requireAuth, settlements.list);
+router.get("/settlements/ledger", requireAuth, settlements.ledger);
+if (!isProd) {
+  router.post("/settlements/run", requireAuth, csrfProtection, settlements.runForDate);
+  router.post("/settlements/:id/mark-paid", requireAuth, csrfProtection, settlements.markPaid);
+}
+
+router.get("/disputes", requireAuth, disputes.list);
+router.post("/disputes/:id/evidence", requireAuth, csrfProtection, disputes.submitEvidence);
+if (!isProd) {
+  router.post("/disputes/:id/resolve", requireAuth, csrfProtection, disputes.devResolve);
+  router.post("/disputes", requireAuth, csrfProtection, disputes.devCreate);
+}
 
 export default router;

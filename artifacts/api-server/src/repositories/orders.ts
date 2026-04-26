@@ -123,10 +123,19 @@ export async function countRecentForMerchant(opts: {
 export async function markPaid(opts: {
   orderId: string;
   txnId: string;
+  paymentMethod?: string | null;
+  feePaise?: number;
 }): Promise<Order | null> {
+  const set: Record<string, unknown> = {
+    status: "SUCCESS",
+    paidAt: new Date(),
+    txnId: opts.txnId,
+  };
+  if (opts.paymentMethod) set["paymentMethod"] = opts.paymentMethod;
+  if (typeof opts.feePaise === "number") set["feePaise"] = opts.feePaise;
   const [row] = await db
     .update(ordersTable)
-    .set({ status: "SUCCESS", paidAt: new Date(), txnId: opts.txnId })
+    .set(set)
     .where(eq(ordersTable.id, opts.orderId))
     .returning();
   return row ?? null;

@@ -1,11 +1,16 @@
 import * as ordersRepo from "../repositories/orders";
 import { getProvider } from "../providers";
+import { calculateFeePaise } from "../services/fees";
 import { enqueueDelivery } from "../services/merchantWebhookDelivery";
+import { runSettlementForDate } from "../services/settlement";
+import { autoApprovePendingKyc } from "../services/kyc";
 
 const EXPIRE_INTERVAL_MS = 60_000; // 1 minute
 const RECONCILE_INTERVAL_MS = 5 * 60_000; // 5 minutes
 const RECONCILE_AGE_MS = 2 * 60_000; // older than 2 minutes
 const RECONCILE_BATCH = 50;
+const SETTLEMENT_INTERVAL_MS = 60 * 60_000; // hourly check
+const KYC_AUTO_INTERVAL_MS = 5_000; // dev: poll for SUBMITTED kyc to auto-approve
 
 let started = false;
 const timers: NodeJS.Timeout[] = [];
@@ -35,9 +40,12 @@ async function reconcileRun(): Promise<void> {
       try {
         const status = await provider.fetchPaymentStatus(order.txnId);
         if (status === "SUCCESS") {
+          const fee = calculateFeePaise(Number(order.amount));
           const updated = await ordersRepo.markPaid({
             orderId: order.id,
             txnId: order.txnId,
+            paymentMethod: "UPI",
+            feePaise: fee,
           });
           if (updated) {
             updates++;
@@ -62,14 +70,47 @@ async function reconcileRun(): Promise<void> {
   }
 }
 
+/**
+ * Daily settlement run: settles SUCCESS orders from yesterday into one
+ * settlement per merchant. Idempotent — `settlements_date_idx` makes a second
+ * call for the same date a no-op.
+ */
+async function settlementRun(): Promise<void> {
+  try {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const dateKey = yesterday.toISOString().slice(0, 10);
+    const result = await runSettlementForDate(dateKey);
+    if (result.settled > 0) {
+      console.log(
+        `[cron:settle] created ${result.settled} settlements for ${dateKey}`,
+      );
+    }
+  } catch (e) {
+    console.error("[cron:settle] failed", e);
+  }
+}
+
+async function kycAutoRun(): Promise<void> {
+  if (process.env["NODE_ENV"] === "production") return;
+  try {
+    const n = await autoApprovePendingKyc();
+    if (n > 0) console.log(`[cron:kyc] auto-approved ${n} merchants`);
+  } catch (e) {
+    console.error("[cron:kyc] failed", e);
+  }
+}
+
 export function startJobs(): void {
   if (started) return;
   started = true;
-  // Stagger startup to avoid hammering DB right when server boots.
   setTimeout(() => void expireRun(), 5_000);
   setTimeout(() => void reconcileRun(), 10_000);
+  setTimeout(() => void settlementRun(), 15_000);
   timers.push(setInterval(() => void expireRun(), EXPIRE_INTERVAL_MS));
   timers.push(setInterval(() => void reconcileRun(), RECONCILE_INTERVAL_MS));
+  timers.push(setInterval(() => void settlementRun(), SETTLEMENT_INTERVAL_MS));
+  timers.push(setInterval(() => void kycAutoRun(), KYC_AUTO_INTERVAL_MS));
   console.log("[jobs] background workers started");
 }
 

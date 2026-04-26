@@ -1,11 +1,13 @@
 import * as ordersRepo from "../repositories/orders";
 import * as merchantsRepo from "../repositories/merchants";
 import * as fraud from "./fraud";
-import { defaultProviderName, getProvider } from "../providers";
+import { providerRouter } from "../providers";
+import { calculateFeePaise } from "./fees";
 import { enqueueDelivery } from "./merchantWebhookDelivery";
 import type { Order } from "@workspace/db";
 
 const ORDER_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const KYC_REQUIRED_AMOUNT = 10_000; // ₹10,000+ requires APPROVED KYC
 
 export class OrderError extends Error {
   status: number;
@@ -19,8 +21,11 @@ export interface OrderPublic {
   id: string;
   orderId: string;
   txnId: string | null;
+  providerOrderId: string | null;
   provider: string;
+  paymentMethod: string | null;
   amount: number;
+  feePaise: number;
   status: string;
   customerName: string | null;
   customerEmail: string | null;
@@ -30,6 +35,8 @@ export interface OrderPublic {
   fraudReason: string | null;
   refundStatus: string | null;
   refundAmount: number | null;
+  settlementId: string | null;
+  settledAt: string | null;
   createdAt: string;
   expiresAt: string;
   paidAt: string | null;
@@ -41,8 +48,11 @@ export function toPublic(o: Order): OrderPublic {
     id: o.id,
     orderId: o.orderId,
     txnId: o.txnId,
+    providerOrderId: o.providerOrderId,
     provider: o.provider,
+    paymentMethod: o.paymentMethod,
     amount: Number(o.amount),
+    feePaise: o.feePaise,
     status: o.status,
     customerName: o.customerName,
     customerEmail: o.customerEmail,
@@ -52,6 +62,8 @@ export function toPublic(o: Order): OrderPublic {
     fraudReason: o.fraudReason,
     refundStatus: o.refundStatus,
     refundAmount: o.refundAmount === null ? null : Number(o.refundAmount),
+    settlementId: o.settlementId,
+    settledAt: o.settledAt ? o.settledAt.toISOString() : null,
     createdAt: o.createdAt.toISOString(),
     expiresAt: o.expiresAt.toISOString(),
     paidAt: o.paidAt ? o.paidAt.toISOString() : null,
@@ -66,7 +78,8 @@ export async function createOrder(input: {
   customerName?: string | null;
   customerEmail?: string | null;
   note?: string | null;
-}): Promise<{ order: OrderPublic; qrImage: string }> {
+  preferredProvider?: string | null;
+}): Promise<{ order: OrderPublic; qrImage: string; checkoutUrl?: string }> {
   if (!input.orderId.trim()) throw new OrderError("orderId is required");
   if (input.amount <= 0) throw new OrderError("amount must be positive");
   if (input.amount > 1_000_000) {
@@ -76,21 +89,62 @@ export async function createOrder(input: {
   const merchant = await merchantsRepo.findById(input.merchantId);
   if (!merchant) throw new OrderError("Merchant not found", 404);
 
-  const provider = getProvider(defaultProviderName);
+  // Block large-value orders for un-KYC'd merchants. Real aggregators do this.
+  if (
+    input.amount > KYC_REQUIRED_AMOUNT &&
+    merchant.kycStatus !== "APPROVED" &&
+    merchant.kycStatus !== "VERIFIED"
+  ) {
+    throw new OrderError(
+      `KYC must be APPROVED to accept orders above ₹${KYC_REQUIRED_AMOUNT.toLocaleString("en-IN")}`,
+      403,
+    );
+  }
+
   const fraudResult = await fraud.evaluate({
     merchantId: input.merchantId,
     amount: input.amount,
   });
 
-  let qr;
-  try {
-    qr = await provider.createQR({
-      orderId: input.orderId,
-      amount: input.amount,
-      businessName: merchant.businessName,
-    });
-  } catch (e) {
-    throw new OrderError("Failed to create payment QR", 502);
+  // Try preferred provider first if specified, else let router pick.
+  let chosen;
+  if (input.preferredProvider) {
+    const p = providerRouter.get(input.preferredProvider);
+    if (!p) throw new OrderError("Unknown provider", 400);
+    try {
+      const result = await p.createQR({
+        orderId: input.orderId,
+        amount: input.amount,
+        businessName: merchant.businessName,
+        customerName: input.customerName ?? null,
+        customerEmail: input.customerEmail ?? null,
+      });
+      chosen = { provider: p.name, result, attempted: [p.name] };
+    } catch {
+      // Fall back to router
+      chosen = await providerRouter.createOrder({
+        orderId: input.orderId,
+        amount: input.amount,
+        businessName: merchant.businessName,
+        customerName: input.customerName ?? null,
+        customerEmail: input.customerEmail ?? null,
+      });
+    }
+  } else {
+    try {
+      chosen = await providerRouter.createOrder({
+        orderId: input.orderId,
+        amount: input.amount,
+        businessName: merchant.businessName,
+        customerName: input.customerName ?? null,
+        customerEmail: input.customerEmail ?? null,
+      });
+    } catch (e) {
+      throw new OrderError(
+        e instanceof Error ? e.message : "Failed to create payment QR",
+        502,
+      );
+    }
   }
 
   let saved;
@@ -98,19 +152,24 @@ export async function createOrder(input: {
     saved = await ordersRepo.insertOrder({
       merchantId: input.merchantId,
       orderId: input.orderId.trim(),
-      txnId: qr.txnId,
-      provider: defaultProviderName,
+      txnId: chosen.result.txnId,
+      providerOrderId: chosen.result.providerOrderId,
+      paymentMethod: null,
+      provider: chosen.provider,
       amount: input.amount.toFixed(2),
+      feePaise: 0,
       status: "PENDING",
       customerName: input.customerName?.trim() || null,
       customerEmail: input.customerEmail?.trim().toLowerCase() || null,
       note: input.note?.trim() || null,
-      qrString: qr.qrString,
+      qrString: chosen.result.qrString,
       fraudFlag: fraudResult.flag,
       fraudReason: fraudResult.reason,
       refundStatus: null,
       refundAmount: null,
       refundedAt: null,
+      settlementId: null,
+      settledAt: null,
       expiresAt: new Date(Date.now() + ORDER_TTL_MS),
       paidAt: null,
     });
@@ -122,7 +181,11 @@ export async function createOrder(input: {
     throw e;
   }
 
-  return { order: toPublic(saved), qrImage: qr.qrImage };
+  return {
+    order: toPublic(saved),
+    qrImage: chosen.result.qrImage,
+    checkoutUrl: chosen.result.checkoutUrl,
+  };
 }
 
 export async function getById(id: string): Promise<OrderPublic | null> {
@@ -151,16 +214,25 @@ export async function exportForMerchant(f: ordersRepo.OrderListFilters): Promise
 export async function simulatePayment(input: {
   txnId: string;
   status: "SUCCESS" | "FAILED";
+  paymentMethod?: string;
 }): Promise<OrderPublic> {
   const order = await ordersRepo.findByTxn(input.txnId);
   if (!order) throw new OrderError("Order not found", 404);
   if (order.status !== "PENDING") {
     throw new OrderError(`Order already ${order.status}`, 409);
   }
-  const updated =
-    input.status === "SUCCESS"
-      ? await ordersRepo.markPaid({ orderId: order.id, txnId: input.txnId })
-      : await ordersRepo.markFailed(order.id);
+  let updated;
+  if (input.status === "SUCCESS") {
+    const fee = calculateFeePaise(Number(order.amount));
+    updated = await ordersRepo.markPaid({
+      orderId: order.id,
+      txnId: input.txnId,
+      paymentMethod: input.paymentMethod ?? "UPI",
+      feePaise: fee,
+    });
+  } else {
+    updated = await ordersRepo.markFailed(order.id);
+  }
   if (!updated) throw new OrderError("Failed to update order", 500);
   await enqueueDelivery({
     order: updated,

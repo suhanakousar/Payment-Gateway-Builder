@@ -1,7 +1,17 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Trash2, Send, Copy, Webhook, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Send,
+  Copy,
+  Webhook,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Loader2,
+} from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -17,6 +27,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Form,
   FormControl,
@@ -39,9 +56,12 @@ interface WebhookLog {
   id: string;
   orderId: string;
   merchantWebhookId: string | null;
+  event: string;
   attempt: number;
   status: string;
+  requestBody: string;
   responseCode: number | null;
+  responseBody: string | null;
   error: string | null;
   createdAt: string;
 }
@@ -73,10 +93,13 @@ function NewWebhookDialog({
   });
   const mutation = useMutation({
     mutationFn: (v: NewValues) =>
-      api<{ id: string; webhookUrl: string; webhookSecret: string }>("/merchant/webhooks", {
-        method: "POST",
-        body: v,
-      }),
+      api<{ id: string; webhookUrl: string; webhookSecret: string }>(
+        "/merchant/webhooks",
+        {
+          method: "POST",
+          body: v,
+        },
+      ),
     onSuccess: (res) => {
       onSecretRevealed(res.webhookSecret, res.webhookUrl);
       qc.invalidateQueries({ queryKey: ["webhooks"] });
@@ -96,7 +119,10 @@ function NewWebhookDialog({
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
+          <form
+            onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
+            className="space-y-4"
+          >
             <FormField
               control={form.control}
               name="webhookUrl"
@@ -114,7 +140,9 @@ function NewWebhookDialog({
               )}
             />
             <DialogFooter>
-              <Button variant="ghost" type="button" onClick={() => onOpenChange(false)}>Cancel</Button>
+              <Button variant="ghost" type="button" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
               <Button type="submit" disabled={mutation.isPending}>
                 {mutation.isPending && <Loader2 size={14} className="mr-1 animate-spin" />}
                 Create webhook
@@ -172,7 +200,8 @@ function SecretRevealDialog({
             </div>
           </div>
           <p className="text-xs text-neutral-500">
-            Verify deliveries by HMAC-SHA256 using the <code className="font-mono">X-PayLite-Signature</code> header.
+            Verify deliveries by HMAC-SHA256 using the{" "}
+            <code className="font-mono">X-PayLite-Signature</code> header.
           </p>
         </div>
         <DialogFooter>
@@ -189,10 +218,20 @@ const LOG_TONE: Record<string, string> = {
   FAILED: "text-rose-700 bg-rose-50 border-rose-200",
 };
 
+function prettyJson(s: string | null): string {
+  if (!s) return "(empty)";
+  try {
+    return JSON.stringify(JSON.parse(s), null, 2);
+  } catch {
+    return s;
+  }
+}
+
 export default function Webhooks() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [reveal, setReveal] = useState<{ secret: string; url: string } | null>(null);
+  const [activeLog, setActiveLog] = useState<WebhookLog | null>(null);
 
   const webhooksQuery = useQuery({
     queryKey: ["webhooks"],
@@ -273,10 +312,14 @@ export default function Webhooks() {
                 className="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
               >
                 <div className="min-w-0">
-                  <div className="font-mono text-sm text-neutral-900 truncate">{w.webhookUrl}</div>
+                  <div className="font-mono text-sm text-neutral-900 truncate">
+                    {w.webhookUrl}
+                  </div>
                   <div className="text-xs text-neutral-500 mt-0.5">
                     Secret <span className="font-mono">{w.maskedSecret}</span> · added{" "}
-                    {new Date(w.createdAt).toLocaleDateString("en-IN", { dateStyle: "medium" })}
+                    {new Date(w.createdAt).toLocaleDateString("en-IN", {
+                      dateStyle: "medium",
+                    })}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -307,13 +350,16 @@ export default function Webhooks() {
       <div className="border border-neutral-200 bg-white rounded-xl">
         <div className="px-5 py-4 border-b border-neutral-200">
           <h2 className="text-sm font-medium">Recent delivery attempts</h2>
-          <p className="text-xs text-neutral-500">Auto-refreshes every 10s · last 50</p>
+          <p className="text-xs text-neutral-500">
+            Click any row to inspect the signed payload and response. Auto-refreshes every 10s · last 50.
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-xs uppercase tracking-wide text-neutral-500 bg-neutral-50">
               <tr>
                 <th className="text-left font-medium px-5 py-2.5">Status</th>
+                <th className="text-left font-medium px-5 py-2.5">Event</th>
                 <th className="text-left font-medium px-5 py-2.5">Order</th>
                 <th className="text-left font-medium px-5 py-2.5">Attempt</th>
                 <th className="text-left font-medium px-5 py-2.5">HTTP</th>
@@ -323,21 +369,38 @@ export default function Webhooks() {
             </thead>
             <tbody>
               {logsQuery.isLoading && (
-                <tr><td colSpan={6} className="px-5 py-10 text-center text-neutral-400">Loading…</td></tr>
+                <tr>
+                  <td colSpan={7} className="px-5 py-10 text-center text-neutral-400">
+                    Loading…
+                  </td>
+                </tr>
               )}
               {!logsQuery.isLoading && logsQuery.data?.length === 0 && (
-                <tr><td colSpan={6} className="px-5 py-12 text-center text-neutral-500">No deliveries yet.</td></tr>
+                <tr>
+                  <td colSpan={7} className="px-5 py-12 text-center text-neutral-500">
+                    No deliveries yet.
+                  </td>
+                </tr>
               )}
               {logsQuery.data?.map((l) => (
-                <tr key={l.id} className="border-t border-neutral-100">
+                <tr
+                  key={l.id}
+                  className="border-t border-neutral-100 hover:bg-neutral-50/60 cursor-pointer"
+                  onClick={() => setActiveLog(l)}
+                >
                   <td className="px-5 py-2.5">
-                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border inline-flex items-center gap-1 ${LOG_TONE[l.status] ?? ""}`}>
+                    <span
+                      className={`text-[10px] font-medium px-1.5 py-0.5 rounded border inline-flex items-center gap-1 ${
+                        LOG_TONE[l.status] ?? ""
+                      }`}
+                    >
                       {l.status === "SENT" && <CheckCircle2 size={10} />}
                       {l.status === "RETRY" && <Clock size={10} />}
                       {l.status === "FAILED" && <XCircle size={10} />}
                       {l.status}
                     </span>
                   </td>
+                  <td className="px-5 py-2.5 font-mono text-xs">{l.event}</td>
                   <td className="px-5 py-2.5 font-mono text-xs">{l.orderId.slice(0, 8)}…</td>
                   <td className="px-5 py-2.5 text-xs">#{l.attempt}</td>
                   <td className="px-5 py-2.5 text-xs">{l.responseCode ?? "—"}</td>
@@ -353,6 +416,80 @@ export default function Webhooks() {
           </table>
         </div>
       </div>
+
+      <Sheet open={!!activeLog} onOpenChange={(v) => !v && setActiveLog(null)}>
+        <SheetContent className="sm:max-w-xl overflow-y-auto">
+          {activeLog && (
+            <>
+              <SheetHeader>
+                <SheetTitle>
+                  <span className="font-mono text-sm">{activeLog.event}</span>
+                </SheetTitle>
+                <SheetDescription>
+                  Attempt #{activeLog.attempt} · {activeLog.status}
+                  {activeLog.responseCode !== null && ` · HTTP ${activeLog.responseCode}`}
+                </SheetDescription>
+              </SheetHeader>
+              <div className="mt-6 space-y-5 text-sm">
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <div className="text-neutral-500">Order</div>
+                    <div className="font-mono mt-0.5">{activeLog.orderId.slice(0, 12)}…</div>
+                  </div>
+                  <div>
+                    <div className="text-neutral-500">When</div>
+                    <div className="mt-0.5">
+                      {new Date(activeLog.createdAt).toLocaleString("en-IN", {
+                        dateStyle: "medium",
+                        timeStyle: "medium",
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {activeLog.error && (
+                  <div className="border border-rose-200 bg-rose-50 rounded-md p-3 text-xs text-rose-800">
+                    <div className="font-medium mb-1">Delivery error</div>
+                    <div>{activeLog.error}</div>
+                  </div>
+                )}
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-xs uppercase tracking-wide text-neutral-500">
+                      Request payload
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        navigator.clipboard.writeText(activeLog.requestBody ?? "");
+                        toast.success("Copied");
+                      }}
+                    >
+                      <Copy size={12} />
+                    </Button>
+                  </div>
+                  <pre className="text-[11px] font-mono leading-relaxed border border-neutral-200 rounded-md p-3 bg-neutral-50 overflow-x-auto max-h-64">
+                    {prettyJson(activeLog.requestBody)}
+                  </pre>
+                </div>
+
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-neutral-500 mb-1">
+                    Response body
+                  </div>
+                  <pre className="text-[11px] font-mono leading-relaxed border border-neutral-200 rounded-md p-3 bg-neutral-50 overflow-x-auto max-h-48">
+                    {activeLog.responseBody && activeLog.responseBody.length > 0
+                      ? activeLog.responseBody
+                      : "(no response body)"}
+                  </pre>
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import * as ordersRepo from "../repositories/orders";
 import { getProvider } from "../providers";
 import { toPublic, type OrderPublic, OrderError } from "./orders";
 import { enqueueDelivery } from "./merchantWebhookDelivery";
+import { assertNoOpenDispute } from "./disputes";
 
 export async function refundOrder(input: {
   merchantId: string;
@@ -17,6 +18,8 @@ export async function refundOrder(input: {
   if (order.refundStatus === "SUCCESS") {
     throw new OrderError("Order already refunded", 409);
   }
+  await assertNoOpenDispute(order.id);
+
   const total = Number(order.amount);
   const amount = input.amount ?? total;
   if (amount <= 0 || amount > total) {

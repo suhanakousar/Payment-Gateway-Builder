@@ -12,6 +12,7 @@ export type WebhookEvent =
   | "payment.success"
   | "payment.failed"
   | "payment.refunded"
+  | "payment.disputed"
   | "test.ping";
 
 interface DeliveryJob {
@@ -115,6 +116,8 @@ async function runJob(job: DeliveryJob): Promise<void> {
   await logsRepo.insertLog({
     orderId: job.order.id,
     merchantWebhookId: job.webhookId,
+    event: job.event,
+    requestBody: job.payload.slice(0, 4096),
     attempt: job.attempt,
     status,
     responseCode,

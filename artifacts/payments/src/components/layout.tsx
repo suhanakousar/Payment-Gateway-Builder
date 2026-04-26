@@ -9,6 +9,8 @@ import {
   Webhook,
   Menu,
   X,
+  Banknote,
+  AlertOctagon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
@@ -18,6 +20,8 @@ import { toast } from "sonner";
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/orders", label: "Orders", icon: Receipt },
+  { href: "/settlements", label: "Settlements", icon: Banknote },
+  { href: "/disputes", label: "Disputes", icon: AlertOctagon },
   { href: "/webhooks", label: "Webhooks", icon: Webhook },
   { href: "/kyc", label: "KYC & Bank", icon: FileCheck2 },
 ];

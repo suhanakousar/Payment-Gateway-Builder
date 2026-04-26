@@ -77,7 +77,7 @@ export async function updateKyc(req: Request, res: Response): Promise<void> {
     return;
   }
   try {
-    const m = await merchantService.updateKyc(req.merchant!.id, parsed.data);
+    const m = await merchantService.saveKycDetails(req.merchant!.id, parsed.data);
     if (!m) {
       res.status(404).json({ error: "Merchant not found" });
       return;
