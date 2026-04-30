@@ -86,6 +86,43 @@ export const merchantWebhooksTable = pgTable(
   (t) => [index("merchant_webhooks_merchant_idx").on(t.merchantId)],
 );
 
+export const webhookDeliveryJobsTable = pgTable(
+  "webhook_delivery_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => ordersTable.id, { onDelete: "cascade" }),
+    merchantWebhookId: uuid("merchant_webhook_id")
+      .notNull()
+      .references(() => merchantWebhooksTable.id, { onDelete: "cascade" }),
+    event: text("event").notNull(),
+    url: text("url").notNull(),
+    secret: text("secret").notNull(),
+    payload: text("payload").notNull(),
+    attempt: integer("attempt").notNull().default(0),
+    status: text("status").notNull().default("PENDING"),
+    availableAt: timestamp("available_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    lastResponseCode: integer("last_response_code"),
+    lastResponseBody: text("last_response_body"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("webhook_delivery_jobs_status_idx").on(t.status, t.availableAt),
+    index("webhook_delivery_jobs_order_idx").on(t.orderId),
+    index("webhook_delivery_jobs_webhook_idx").on(t.merchantWebhookId),
+  ],
+);
+
 export const webhookLogsTable = pgTable(
   "webhook_logs",
   {
@@ -122,4 +159,5 @@ export type InsertOrder = z.infer<typeof insertOrderSchema>;
 export type Order = typeof ordersTable.$inferSelect;
 export type WebhookEvent = typeof webhookEventsTable.$inferSelect;
 export type MerchantWebhook = typeof merchantWebhooksTable.$inferSelect;
+export type WebhookDeliveryJob = typeof webhookDeliveryJobsTable.$inferSelect;
 export type WebhookLog = typeof webhookLogsTable.$inferSelect;

@@ -8,7 +8,10 @@ export async function receive(req: Request, res: Response): Promise<void> {
     res.status(400).json({ error: "Missing raw body" });
     return;
   }
-  const providerName = (req.query["provider"] as string | undefined) ?? "mock";
+  const providerName =
+    (req.query["provider"] as string | undefined) ??
+    process.env["DEFAULT_PROVIDER"] ??
+    "cashfree";
   // Hand the entire header set to the adapter — different providers use
   // different header names (x-razorpay-signature, x-webhook-signature, …).
   const headers: Record<string, string | undefined> = {};

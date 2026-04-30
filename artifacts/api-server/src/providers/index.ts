@@ -5,6 +5,7 @@ import { cashfreeProvider } from "./cashfree";
 import { ProviderRouter, parseWeights } from "./router";
 
 const router = new ProviderRouter();
+const defaultProviderName = process.env["DEFAULT_PROVIDER"] ?? "cashfree";
 
 const weights = parseWeights(
   process.env["PROVIDER_WEIGHTS"] ?? "razorpay:70,cashfree:25,mock:5",
@@ -17,7 +18,7 @@ for (const p of [razorpayProvider, cashfreeProvider, mockProvider]) {
 export const providerRouter = router;
 
 export function getProvider(name: string): PaymentProvider {
-  return router.get(name) ?? mockProvider;
+  return router.get(name) ?? router.get(defaultProviderName) ?? mockProvider;
 }
 
 export function listProviders(): PaymentProvider[] {

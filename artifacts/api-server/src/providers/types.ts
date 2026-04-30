@@ -17,13 +17,21 @@ export interface ProviderOrderInput {
   businessName: string;
   customerName?: string | null;
   customerEmail?: string | null;
+  merchantConfig?: {
+    merchantId: string;
+    providerMerchantId?: string | null;
+    providerStoreId?: string | null;
+    providerTerminalId?: string | null;
+    providerReference?: string | null;
+    providerVpa?: string | null;
+  };
 }
 
 export interface ProviderOrderResult {
   txnId: string;
   providerOrderId: string;
-  qrString: string;
-  qrImage: string; // data URL PNG
+  qrString?: string | null;
+  qrImage?: string | null; // data URL PNG
   /** Hosted checkout URL for non-UPI payment options. Optional. */
   checkoutUrl?: string;
 }

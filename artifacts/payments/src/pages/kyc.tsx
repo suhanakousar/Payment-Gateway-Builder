@@ -47,7 +47,17 @@ const schema = z.object({
     .regex(/^[A-Z0-9]+$/i, "Use letters and digits only"),
 });
 
+const providerSchema = z.object({
+  preferredProvider: z.string().min(2, "Provider required").max(40),
+  providerMerchantId: z.string().max(120).optional().or(z.literal("")),
+  providerStoreId: z.string().max(120).optional().or(z.literal("")),
+  providerTerminalId: z.string().max(120).optional().or(z.literal("")),
+  providerReference: z.string().max(120).optional().or(z.literal("")),
+  providerVpa: z.string().max(120).optional().or(z.literal("")),
+});
+
 type Values = z.infer<typeof schema>;
+type ProviderValues = z.infer<typeof providerSchema>;
 
 interface KycDoc {
   id: string;
@@ -87,7 +97,7 @@ const STATUS_BLOCK: Record<
     tone: "border-amber-200 bg-amber-50 text-amber-800",
     icon: Clock,
     title: "Submitted — waiting for review",
-    body: "Our team is checking your details. We'll usually finish within an hour.",
+    body: "In this demo build, merchants are auto-approved shortly after valid documents are uploaded.",
   },
   UNDER_REVIEW: {
     tone: "border-amber-200 bg-amber-50 text-amber-800",
@@ -146,6 +156,17 @@ export default function Kyc() {
     resolver: zodResolver(schema),
     defaultValues: { pan: "", bankAccount: "", ifsc: "" },
   });
+  const providerForm = useForm<ProviderValues>({
+    resolver: zodResolver(providerSchema),
+    defaultValues: {
+      preferredProvider: merchant?.preferredProvider ?? "cashfree",
+      providerMerchantId: merchant?.providerMerchantId ?? "",
+      providerStoreId: merchant?.providerStoreId ?? "",
+      providerTerminalId: merchant?.providerTerminalId ?? "",
+      providerReference: merchant?.providerReference ?? "",
+      providerVpa: merchant?.providerVpa ?? "",
+    },
+  });
 
   useEffect(() => {
     if (merchant) {
@@ -154,8 +175,16 @@ export default function Kyc() {
         bankAccount: merchant.bankAccount,
         ifsc: merchant.ifsc,
       });
+      providerForm.reset({
+        preferredProvider: merchant.preferredProvider ?? "cashfree",
+        providerMerchantId: merchant.providerMerchantId ?? "",
+        providerStoreId: merchant.providerStoreId ?? "",
+        providerTerminalId: merchant.providerTerminalId ?? "",
+        providerReference: merchant.providerReference ?? "",
+        providerVpa: merchant.providerVpa ?? "",
+      });
     }
-  }, [merchant]);
+  }, [merchant, providerForm]);
 
   const docsQ = useQuery({
     queryKey: ["kyc", "docs"],
@@ -192,6 +221,25 @@ export default function Kyc() {
       toast.success("Document removed");
       qc.invalidateQueries({ queryKey: ["kyc", "docs"] });
     },
+  });
+  const providerMut = useMutation({
+    mutationFn: (values: ProviderValues) =>
+      api<{ merchant: unknown }>("/merchant/provider-config", {
+        method: "PUT",
+        body: {
+          ...values,
+          providerMerchantId: values.providerMerchantId || undefined,
+          providerStoreId: values.providerStoreId || undefined,
+          providerTerminalId: values.providerTerminalId || undefined,
+          providerReference: values.providerReference || undefined,
+          providerVpa: values.providerVpa || undefined,
+        },
+      }),
+    onSuccess: async () => {
+      toast.success("Provider mapping saved");
+      await refresh();
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : "Provider settings failed"),
   });
 
   async function handleFile(file: File) {
@@ -392,6 +440,125 @@ export default function Kyc() {
         </Form>
       </motion.div>
 
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.02 }}
+        className="border border-neutral-200 bg-white rounded-xl p-5"
+      >
+        <div className="flex items-center gap-2 mb-1">
+          <ShieldCheck size={14} className="text-neutral-500" />
+          <h2 className="text-sm font-medium">Provider mapping & receiving UPI</h2>
+        </div>
+        <p className="text-xs text-neutral-500 mb-4">
+          This section decides which merchant account a generated QR belongs to. Each merchant should save their own receiving UPI ID and provider mapping here.
+        </p>
+
+        <Form {...providerForm}>
+          <form
+            onSubmit={providerForm.handleSubmit((v) => providerMut.mutate(v))}
+            className="space-y-4"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField
+                control={providerForm.control}
+                name="preferredProvider"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Provider</FormLabel>
+                    <FormControl>
+                      <Input placeholder="cashfree" {...field} />
+                    </FormControl>
+                    <FormDescription className="text-xs">
+                      Example: `cashfree`, `razorpay`, `decentro`, `pinelabs`
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={providerForm.control}
+                name="providerMerchantId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Provider merchant ID</FormLabel>
+                    <FormControl>
+                      <Input className="font-mono" placeholder="sub_merchant_123" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField
+                control={providerForm.control}
+                name="providerStoreId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Store ID</FormLabel>
+                    <FormControl>
+                      <Input className="font-mono" placeholder="store_001" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={providerForm.control}
+                name="providerTerminalId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Terminal ID</FormLabel>
+                    <FormControl>
+                      <Input className="font-mono" placeholder="terminal_001" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormField
+                control={providerForm.control}
+                name="providerReference"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Reference / return URL</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Optional provider reference" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={providerForm.control}
+                name="providerVpa"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Merchant receiving UPI ID</FormLabel>
+                    <FormControl>
+                      <Input className="font-mono" placeholder="merchant@bank" {...field} />
+                    </FormControl>
+                    <FormDescription className="text-xs">
+                      Every QR generated for this merchant uses this UPI identity as the receiver.
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+              If this field is empty, PayLite will block QR generation for the merchant.
+            </div>
+            <Button type="submit" disabled={providerMut.isPending}>
+              {providerMut.isPending ? "Saving…" : "Save provider mapping"}
+            </Button>
+          </form>
+        </Form>
+      </motion.div>
+
       {/* Step 2: documents */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
@@ -404,7 +571,7 @@ export default function Kyc() {
           <h2 className="text-sm font-medium">Step 2 — Upload supporting documents</h2>
         </div>
         <p className="text-xs text-neutral-500 mb-4">
-          PAN card and a cancelled cheque are required. PDF, JPG or PNG up to 2 MB each.
+          PAN card and a cancelled cheque are required. PDF, JPG or PNG up to 2 MB each. After upload, this demo auto-approves KYC in a few seconds.
         </p>
 
         <div className="flex gap-2 flex-wrap items-end mb-4">
@@ -499,7 +666,7 @@ export default function Kyc() {
               ? "Upload at least one document in step 2."
               : isComplete
                 ? "All done — your account is fully verified."
-                : "We're reviewing automatically. This page will update when complete."}
+                : "Documents are uploaded. This demo will update the status automatically shortly."}
         </p>
       </motion.div>
     </div>

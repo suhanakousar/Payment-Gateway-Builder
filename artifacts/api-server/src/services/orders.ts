@@ -5,6 +5,7 @@ import { providerRouter } from "../providers";
 import { calculateFeePaise } from "./fees";
 import { enqueueDelivery } from "./merchantWebhookDelivery";
 import type { Order } from "@workspace/db";
+import { decryptString } from "../utils/crypto";
 
 const ORDER_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const KYC_REQUIRED_AMOUNT = 10_000; // ₹10,000+ requires APPROVED KYC
@@ -23,6 +24,8 @@ export interface OrderPublic {
   txnId: string | null;
   providerOrderId: string | null;
   provider: string;
+  receiverVpa: string | null;
+  receiverLabel: string | null;
   paymentMethod: string | null;
   amount: number;
   feePaise: number;
@@ -44,12 +47,38 @@ export interface OrderPublic {
 }
 
 export function toPublic(o: Order): OrderPublic {
+  const isHostedCheckout =
+    o.qrString?.startsWith("http://") || o.qrString?.startsWith("https://");
+  const receiverVpa = (() => {
+    if (!o.qrString || isHostedCheckout) return null;
+    try {
+      const query = o.qrString.startsWith("upi://pay?")
+        ? o.qrString.slice("upi://pay?".length)
+        : o.qrString;
+      return new URLSearchParams(query).get("pa");
+    } catch {
+      return null;
+    }
+  })();
+  const receiverLabel = (() => {
+    if (!o.qrString || isHostedCheckout) return null;
+    try {
+      const query = o.qrString.startsWith("upi://pay?")
+        ? o.qrString.slice("upi://pay?".length)
+        : o.qrString;
+      return new URLSearchParams(query).get("pn");
+    } catch {
+      return null;
+    }
+  })();
   return {
     id: o.id,
     orderId: o.orderId,
     txnId: o.txnId,
     providerOrderId: o.providerOrderId,
     provider: o.provider,
+    receiverVpa,
+    receiverLabel,
     paymentMethod: o.paymentMethod,
     amount: Number(o.amount),
     feePaise: o.feePaise,
@@ -79,7 +108,7 @@ export async function createOrder(input: {
   customerEmail?: string | null;
   note?: string | null;
   preferredProvider?: string | null;
-}): Promise<{ order: OrderPublic; qrImage: string; checkoutUrl?: string }> {
+}): Promise<{ order: OrderPublic; qrImage: string | null; checkoutUrl?: string }> {
   if (!input.orderId.trim()) throw new OrderError("orderId is required");
   if (input.amount <= 0) throw new OrderError("amount must be positive");
   if (input.amount > 1_000_000) {
@@ -106,39 +135,49 @@ export async function createOrder(input: {
     amount: input.amount,
   });
 
+  const providerInput = {
+    orderId: input.orderId,
+    amount: input.amount,
+    businessName: merchant.businessName,
+    customerName: input.customerName ?? null,
+    customerEmail: input.customerEmail ?? null,
+    merchantConfig: {
+      merchantId: merchant.id,
+      providerMerchantId: decryptString(merchant.providerMerchantId),
+      providerStoreId: decryptString(merchant.providerStoreId),
+      providerTerminalId: decryptString(merchant.providerTerminalId),
+      providerReference: decryptString(merchant.providerReference),
+      providerVpa: decryptString(merchant.providerVpa),
+    },
+  };
+
+  if (!providerInput.merchantConfig.providerVpa) {
+    throw new OrderError(
+      "Add the merchant's receiving UPI ID in KYC & bank -> Provider mapping before generating a QR",
+      412,
+    );
+  }
+
   // Try preferred provider first if specified, else let router pick.
   let chosen;
-  if (input.preferredProvider) {
-    const p = providerRouter.get(input.preferredProvider);
+  const preferredProvider = input.preferredProvider ?? merchant.preferredProvider;
+  if (preferredProvider) {
+    const p = providerRouter.get(preferredProvider);
     if (!p) throw new OrderError("Unknown provider", 400);
     try {
-      const result = await p.createQR({
-        orderId: input.orderId,
-        amount: input.amount,
-        businessName: merchant.businessName,
-        customerName: input.customerName ?? null,
-        customerEmail: input.customerEmail ?? null,
-      });
+      const result = await p.createQR(providerInput);
       chosen = { provider: p.name, result, attempted: [p.name] };
-    } catch {
-      // Fall back to router
-      chosen = await providerRouter.createOrder({
-        orderId: input.orderId,
-        amount: input.amount,
-        businessName: merchant.businessName,
-        customerName: input.customerName ?? null,
-        customerEmail: input.customerEmail ?? null,
-      });
+    } catch (e) {
+      throw new OrderError(
+        e instanceof Error
+          ? `${p.displayName} order creation failed: ${e.message}`
+          : `${p.displayName} order creation failed`,
+        502,
+      );
     }
   } else {
     try {
-      chosen = await providerRouter.createOrder({
-        orderId: input.orderId,
-        amount: input.amount,
-        businessName: merchant.businessName,
-        customerName: input.customerName ?? null,
-        customerEmail: input.customerEmail ?? null,
-      });
+      chosen = await providerRouter.createOrder(providerInput);
     } catch (e) {
       throw new OrderError(
         e instanceof Error ? e.message : "Failed to create payment QR",
@@ -162,7 +201,7 @@ export async function createOrder(input: {
       customerName: input.customerName?.trim() || null,
       customerEmail: input.customerEmail?.trim().toLowerCase() || null,
       note: input.note?.trim() || null,
-      qrString: chosen.result.qrString,
+      qrString: chosen.result.qrString ?? null,
       fraudFlag: fraudResult.flag,
       fraudReason: fraudResult.reason,
       refundStatus: null,
@@ -183,13 +222,13 @@ export async function createOrder(input: {
 
   return {
     order: toPublic(saved),
-    qrImage: chosen.result.qrImage,
+    qrImage: chosen.result.qrImage ?? null,
     checkoutUrl: chosen.result.checkoutUrl,
   };
 }
 
 export async function getById(id: string): Promise<OrderPublic | null> {
-  const o = await ordersRepo.findById(id);
+  const o = await ordersRepo.findByPublicId(id);
   return o ? toPublic(o) : null;
 }
 

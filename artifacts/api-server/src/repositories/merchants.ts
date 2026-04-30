@@ -38,6 +38,26 @@ export async function insertMerchant(values: {
   return row!;
 }
 
+export async function updateProviderFields(
+  id: string,
+  patch: Partial<{
+    preferredProvider: string;
+    providerMerchantId: string | null;
+    providerStoreId: string | null;
+    providerTerminalId: string | null;
+    providerReference: string | null;
+    providerVpa: string | null;
+    providerStatus: string;
+  }>,
+): Promise<Merchant> {
+  const [row] = await db
+    .update(merchantsTable)
+    .set(patch)
+    .where(eq(merchantsTable.id, id))
+    .returning();
+  return row!;
+}
+
 export async function updateKycFields(
   id: string,
   patch: Partial<{

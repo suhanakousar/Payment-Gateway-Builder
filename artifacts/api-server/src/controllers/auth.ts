@@ -4,10 +4,21 @@ import {
   LoginBody,
   UpdateKycBody,
 } from "@workspace/api-zod";
+import { z } from "zod";
 import * as authService from "../services/auth";
 import * as merchantService from "../services/merchant";
 import { setAuthCookie, clearAuthCookie } from "../middlewares/auth";
 import { issueCsrfCookie } from "../middlewares/csrf";
+
+const ProviderConfigBody = z.object({
+  preferredProvider: z.string().trim().min(2).max(40),
+  providerMerchantId: z.string().trim().max(120).optional().nullable(),
+  providerStoreId: z.string().trim().max(120).optional().nullable(),
+  providerTerminalId: z.string().trim().max(120).optional().nullable(),
+  providerReference: z.string().trim().max(120).optional().nullable(),
+  providerVpa: z.string().trim().max(120).optional().nullable(),
+  providerStatus: z.string().trim().max(32).optional(),
+});
 
 function handleError(res: Response, e: unknown): void {
   if (e instanceof authService.AuthError) {
@@ -78,6 +89,27 @@ export async function updateKyc(req: Request, res: Response): Promise<void> {
   }
   try {
     const m = await merchantService.saveKycDetails(req.merchant!.id, parsed.data);
+    if (!m) {
+      res.status(404).json({ error: "Merchant not found" });
+      return;
+    }
+    res.json({ merchant: m });
+  } catch (e) {
+    handleError(res, e);
+  }
+}
+
+export async function updateProviderConfig(
+  req: Request,
+  res: Response,
+): Promise<void> {
+  const parsed = ProviderConfigBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid body" });
+    return;
+  }
+  try {
+    const m = await merchantService.saveProviderConfig(req.merchant!.id, parsed.data);
     if (!m) {
       res.status(404).json({ error: "Merchant not found" });
       return;

@@ -1,0 +1,128 @@
+2026-04-29 19:48:01.086 IST [29168] LOG:  starting PostgreSQL 18.0 on x86_64-windows, compiled by msvc-19.44.35217, 64-bit
+2026-04-29 19:48:01.088 IST [29168] LOG:  listening on IPv4 address "127.0.0.1", port 55432
+2026-04-29 19:48:01.220 IST [11832] LOG:  database system was shut down at 2026-04-29 19:47:45 IST
+2026-04-29 19:48:01.237 IST [29168] LOG:  database system is ready to accept connections
+2026-04-29 19:48:17.139 IST [29420] FATAL:  database "payment_gateway_builder" does not exist
+2026-04-29 19:48:29.728 IST [22860] ERROR:  database "payment_gateway_builder" already exists
+2026-04-29 19:48:29.728 IST [22860] STATEMENT:  CREATE DATABASE payment_gateway_builder;
+2026-04-29 19:49:13.214 IST [24236] ERROR:  relation "merchants" does not exist at character 351
+2026-04-29 19:49:13.214 IST [24236] STATEMENT:  select "id", "name", "email", "password_hash", "business_name", "preferred_provider", "provider_merchant_id", "provider_store_id", "provider_terminal_id", "provider_reference", "provider_vpa", "provider_status", "pan", "bank_account", "ifsc", "kyc_status", "kyc_submitted_at", "kyc_reviewed_at", "kyc_rejection_reason", "approved", "created_at" from "merchants" where "merchants"."email" = $1 limit $2
+2026-04-29 19:49:32.242 IST [28872] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 19:53:01.206 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 19:54:53.721 IST [20908] LOG:  checkpoint complete: wrote 1093 buffers (6.7%), wrote 3 SLRU buffers; 1 WAL file(s) added, 0 removed, 0 recycled; write=112.184 s, sync=0.247 s, total=112.517 s; sync files=377, longest=0.023 s, average=0.001 s; distance=5416 kB, estimate=5416 kB; lsn=0/1D3B6E0, redo lsn=0/1D3B650
+2026-04-29 19:58:01.733 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 19:58:02.518 IST [20908] LOG:  checkpoint complete: wrote 7 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.712 s, sync=0.025 s, total=0.786 s; sync files=8, longest=0.020 s, average=0.004 s; distance=7 kB, estimate=4875 kB; lsn=0/1D3D520, redo lsn=0/1D3D4C8
+2026-04-29 21:04:43.113 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 21:04:44.153 IST [20908] LOG:  checkpoint complete: wrote 10 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=1.020 s, sync=0.009 s, total=1.041 s; sync files=11, longest=0.002 s, average=0.001 s; distance=5 kB, estimate=4388 kB; lsn=0/1D3E988, redo lsn=0/1D3E930
+2026-04-29 21:14:43.155 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 21:14:43.277 IST [20908] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.104 s, sync=0.004 s, total=0.123 s; sync files=2, longest=0.002 s, average=0.002 s; distance=1 kB, estimate=3950 kB; lsn=0/1D3EF18, redo lsn=0/1D3EEC0
+2026-04-29 21:19:43.278 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 21:19:44.367 IST [20908] LOG:  checkpoint complete: wrote 10 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=1.021 s, sync=0.049 s, total=1.089 s; sync files=11, longest=0.029 s, average=0.005 s; distance=6 kB, estimate=3555 kB; lsn=0/1D407B8, redo lsn=0/1D40760
+2026-04-29 21:32:08.622 IST [32052] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 21:32:08.622 IST [34508] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 21:34:43.369 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 21:34:44.944 IST [20908] LOG:  checkpoint complete: wrote 15 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=1.534 s, sync=0.021 s, total=1.576 s; sync files=14, longest=0.006 s, average=0.002 s; distance=8 kB, estimate=3201 kB; lsn=0/1D42A08, redo lsn=0/1D429B0
+2026-04-29 21:39:43.946 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 21:39:45.084 IST [20908] LOG:  checkpoint complete: wrote 11 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=1.114 s, sync=0.009 s, total=1.138 s; sync files=12, longest=0.002 s, average=0.001 s; distance=13 kB, estimate=2882 kB; lsn=0/1D45F18, redo lsn=0/1D45EC0
+2026-04-29 21:49:43.084 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 21:49:44.044 IST [20908] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.918 s, sync=0.020 s, total=0.960 s; sync files=10, longest=0.004 s, average=0.002 s; distance=6 kB, estimate=2594 kB; lsn=0/1D47AF8, redo lsn=0/1D47AA0
+2026-04-29 21:50:56.108 IST [28376] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 21:50:56.108 IST [23344] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 21:53:36.405 IST [23844] ERROR:  column "provider_vpa_enc" does not exist at character 54
+2026-04-29 21:53:36.405 IST [23844] STATEMENT:  select id, email, business_name, preferred_provider, provider_vpa_enc is not null as has_vpa, kyc_status from merchants order by created_at desc;
+2026-04-29 21:54:37.371 IST [32908] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 21:54:37.372 IST [31776] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 21:54:43.044 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 21:54:44.012 IST [20908] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.924 s, sync=0.022 s, total=0.968 s; sync files=10, longest=0.004 s, average=0.003 s; distance=7 kB, estimate=2335 kB; lsn=0/1D49888, redo lsn=0/1D49830
+2026-04-29 21:56:28.429 IST [30864] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 21:59:43.013 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 21:59:44.271 IST [20908] LOG:  checkpoint complete: wrote 12 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=1.225 s, sync=0.017 s, total=1.259 s; sync files=13, longest=0.003 s, average=0.002 s; distance=12 kB, estimate=2103 kB; lsn=0/1D4CBE0, redo lsn=0/1D4CB88
+2026-04-29 22:14:35.100 IST [32928] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 22:14:35.100 IST [32176] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 22:14:43.273 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 22:14:44.236 IST [20908] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.907 s, sync=0.014 s, total=0.964 s; sync files=10, longest=0.003 s, average=0.002 s; distance=8 kB, estimate=1894 kB; lsn=0/1D4EE60, redo lsn=0/1D4EE08
+2026-04-29 22:19:43.237 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 22:19:44.488 IST [20908] LOG:  checkpoint complete: wrote 12 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=1.218 s, sync=0.016 s, total=1.252 s; sync files=13, longest=0.003 s, average=0.002 s; distance=15 kB, estimate=1706 kB; lsn=0/1D52C98, redo lsn=0/1D52C40
+2026-04-29 22:20:17.765 IST [33884] ERROR:  invalid input syntax for type uuid: "ORD-MOK9QTMA"
+2026-04-29 22:20:17.765 IST [33884] CONTEXT:  unnamed portal parameter $1 = '...'
+2026-04-29 22:20:17.765 IST [33884] STATEMENT:  select "id", "merchant_id", "order_id", "txn_id", "provider", "provider_order_id", "payment_method", "amount", "fee_paise", "status", "customer_name", "customer_email", "note", "qr_string", "fraud_flag", "fraud_reason", "refund_status", "refund_amount", "refunded_at", "settlement_id", "settled_at", "created_at", "expires_at", "paid_at" from "orders" where "orders"."id" = $1 limit $2
+2026-04-29 22:21:31.264 IST [30208] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 22:21:31.266 IST [12132] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 22:24:43.490 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 22:24:44.558 IST [20908] LOG:  checkpoint complete: wrote 10 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=1.026 s, sync=0.016 s, total=1.069 s; sync files=11, longest=0.004 s, average=0.002 s; distance=15 kB, estimate=1537 kB; lsn=0/1D568E0, redo lsn=0/1D56888
+2026-04-29 22:34:43.563 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 22:34:44.534 IST [20908] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.925 s, sync=0.016 s, total=0.972 s; sync files=10, longest=0.003 s, average=0.002 s; distance=11 kB, estimate=1384 kB; lsn=0/1D59770, redo lsn=0/1D59718
+2026-04-29 22:39:43.535 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 22:39:44.598 IST [20908] LOG:  checkpoint complete: wrote 10 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=1.027 s, sync=0.017 s, total=1.063 s; sync files=11, longest=0.003 s, average=0.002 s; distance=17 kB, estimate=1247 kB; lsn=0/1D5DDA0, redo lsn=0/1D5DD48
+2026-04-29 22:48:02.300 IST [21556] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 22:48:02.300 IST [33184] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 22:49:43.601 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 22:49:44.661 IST [20908] LOG:  checkpoint complete: wrote 10 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=1.010 s, sync=0.016 s, total=1.060 s; sync files=11, longest=0.003 s, average=0.002 s; distance=17 kB, estimate=1124 kB; lsn=0/1D624B8, redo lsn=0/1D62460
+2026-04-29 22:52:02.269 IST [29276] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:02.275 IST [10820] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:02.276 IST [34192] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:04.745 IST [28892] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:07.227 IST [39464] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:07.239 IST [39052] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:07.335 IST [36912] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:12.275 IST [28892] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:12.280 IST [992] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:12.285 IST [39104] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:17.262 IST [36336] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:17.268 IST [14712] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:22.265 IST [31164] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:22.376 IST [11392] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:27.274 IST [31708] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:27.280 IST [34076] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:32.267 IST [34368] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:32.272 IST [26316] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:32.600 IST [7476] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:35.285 IST [31528] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:37.251 IST [39820] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:37.253 IST [3400] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:40.187 IST [29516] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:42.271 IST [20580] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:42.277 IST [35888] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:47.257 IST [39900] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:47.270 IST [28472] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:52.305 IST [40192] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:52.400 IST [40128] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:57.260 IST [40820] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:57.264 IST [40836] FATAL:  role "arshiya" does not exist
+2026-04-29 22:52:57.273 IST [40876] FATAL:  role "arshiya" does not exist
+2026-04-29 22:53:02.291 IST [10608] FATAL:  role "arshiya" does not exist
+2026-04-29 22:53:02.307 IST [40524] FATAL:  role "arshiya" does not exist
+2026-04-29 22:53:07.288 IST [40532] FATAL:  role "arshiya" does not exist
+2026-04-29 22:53:07.294 IST [16840] FATAL:  role "arshiya" does not exist
+2026-04-29 22:53:12.278 IST [39924] FATAL:  role "arshiya" does not exist
+2026-04-29 22:53:12.280 IST [29312] FATAL:  role "arshiya" does not exist
+2026-04-29 22:53:17.255 IST [40848] FATAL:  role "arshiya" does not exist
+2026-04-29 22:53:17.262 IST [40792] FATAL:  role "arshiya" does not exist
+2026-04-29 22:54:43.663 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 22:54:44.601 IST [20908] LOG:  checkpoint complete: wrote 9 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.907 s, sync=0.011 s, total=0.938 s; sync files=10, longest=0.002 s, average=0.002 s; distance=13 kB, estimate=1013 kB; lsn=0/1D65AC8, redo lsn=0/1D65A70
+2026-04-29 22:57:18.673 IST [23620] LOG:  could not receive data from client: An existing connection was forcibly closed by the remote host.
+	
+2026-04-29 22:59:43.602 IST [20908] LOG:  checkpoint starting: time
+2026-04-29 22:59:43.847 IST [20908] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.207 s, sync=0.005 s, total=0.246 s; sync files=2, longest=0.003 s, average=0.002 s; distance=8 kB, estimate=913 kB; lsn=0/1D67BD0, redo lsn=0/1D67B40
+2026-04-30 09:26:38.259 IST [29168] LOG:  autovacuum worker (PID 7008) was terminated by exception 0xC000026B
+2026-04-30 09:26:38.259 IST [29168] HINT:  See C include file "ntstatus.h" for a description of the hexadecimal value.
+2026-04-30 09:26:38.259 IST [29168] LOG:  terminating any other active server processes
+2026-04-30 09:26:38.278 IST [29168] LOG:  all server processes terminated; reinitializing
+2026-04-30 09:26:38.347 IST [29168] LOG:  startup process (PID 40272) was terminated by exception 0xC000026B
+2026-04-30 09:26:38.347 IST [29168] HINT:  See C include file "ntstatus.h" for a description of the hexadecimal value.
+2026-04-30 09:26:38.348 IST [29168] LOG:  aborting startup due to startup process failure
+2026-04-30 09:26:38.351 IST [29168] LOG:  database system is shut down

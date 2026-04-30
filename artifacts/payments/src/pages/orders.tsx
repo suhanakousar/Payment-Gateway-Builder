@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { api, apiBlob, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/lib/auth";
 import {
   Dialog,
   DialogContent,
@@ -92,6 +93,7 @@ function NewOrderDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const qc = useQueryClient();
+  const { merchant } = useAuth();
   const form = useForm<NewOrderValues>({
     resolver: zodResolver(newOrderSchema),
     defaultValues: {
@@ -139,6 +141,11 @@ function NewOrderDialog({
         <DialogHeader>
           <DialogTitle>New order</DialogTitle>
         </DialogHeader>
+        {!merchant?.providerVpa && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Add the merchant UPI ID in <code>KYC &amp; bank -&gt; Provider mapping</code> before creating QR orders.
+          </div>
+        )}
         <Form {...form}>
           <form
             onSubmit={form.handleSubmit((v) => mutation.mutate(v))}
@@ -213,7 +220,10 @@ function NewOrderDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={mutation.isPending}>
+              <Button
+                type="submit"
+                disabled={mutation.isPending || !merchant?.providerVpa}
+              >
                 {mutation.isPending ? "Creating…" : "Create order"}
               </Button>
             </DialogFooter>

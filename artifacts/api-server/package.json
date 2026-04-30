@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
+    "dev": "cross-env NODE_ENV=development corepack pnpm run build && cross-env NODE_ENV=development node --enable-source-maps ./dist/index.mjs",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "seed": "tsx scripts/seed.ts",
@@ -23,7 +23,8 @@
     "jsonwebtoken": "^9.0.3",
     "pino": "^9",
     "pino-http": "^10",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
@@ -33,6 +34,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "catalog:",
     "@types/qrcode": "^1.5.6",
+    "cross-env": "^7.0.3",
     "esbuild": "^0.27.3",
     "esbuild-plugin-pino": "^2.3.3",
     "pino-pretty": "^13",

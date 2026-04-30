@@ -25,7 +25,9 @@ const DISPUTE_DEADLINE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 export async function processProviderWebhook(
   input: ProviderWebhookInput,
 ): Promise<{ ok: true; deduped: boolean; provider: string }> {
-  const provider = providerRouter.get(input.providerName) ?? getProvider("mock");
+  const provider =
+    providerRouter.get(input.providerName) ??
+    getProvider(process.env["DEFAULT_PROVIDER"] ?? "cashfree");
 
   let parsed;
   try {

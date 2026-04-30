@@ -57,13 +57,20 @@ export const razorpayProvider: PaymentProvider = {
   isAvailable: () => true,
 
   async createQR(input: ProviderOrderInput): Promise<ProviderOrderResult> {
+    const providerVpa = input.merchantConfig?.providerVpa || PROVIDER_VPA;
     if (LIVE) {
       // Real Razorpay API: create an order, then a QR linked to it.
       const order = await callRzp<{ id: string }>("/orders", {
         amount: Math.round(input.amount * 100),
         currency: "INR",
         receipt: input.orderId,
-        notes: { businessName: input.businessName },
+        notes: {
+          businessName: input.businessName,
+          merchantId: input.merchantConfig?.merchantId ?? "",
+          providerMerchantId: input.merchantConfig?.providerMerchantId ?? "",
+          providerStoreId: input.merchantConfig?.providerStoreId ?? "",
+          providerTerminalId: input.merchantConfig?.providerTerminalId ?? "",
+        },
       });
       const qr = await callRzp<{ id: string; image_url: string; qr_code: string }>(
         "/payments/qr_codes",
@@ -94,11 +101,11 @@ export const razorpayProvider: PaymentProvider = {
     // Sandbox stub: identical surface, no network.
     const orderId = rzpId("order");
     const qrId = rzpId("qr");
-    const qrString = `upi://pay?${new URLSearchParams({
-      pa: PROVIDER_VPA,
-      pn: input.businessName,
-      am: input.amount.toFixed(2),
-      cu: "INR",
+      const qrString = `upi://pay?${new URLSearchParams({
+        pa: providerVpa,
+        pn: input.businessName,
+        am: input.amount.toFixed(2),
+        cu: "INR",
       tn: input.orderId,
       tr: qrId,
     }).toString()}`;

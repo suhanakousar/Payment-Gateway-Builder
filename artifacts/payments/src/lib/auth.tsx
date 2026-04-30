@@ -6,6 +6,13 @@ export interface Merchant {
   name: string;
   email: string;
   businessName: string;
+  preferredProvider: string;
+  providerMerchantId: string | null;
+  providerStoreId?: string | null;
+  providerTerminalId?: string | null;
+  providerReference?: string | null;
+  providerVpa?: string | null;
+  providerStatus?: string;
   pan: string | null;
   bankAccount: string | null;
   ifsc: string | null;

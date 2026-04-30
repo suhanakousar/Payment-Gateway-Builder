@@ -1,12 +1,16 @@
 import * as ordersRepo from "../repositories/orders";
 import { getProvider } from "../providers";
 import { calculateFeePaise } from "../services/fees";
-import { enqueueDelivery } from "../services/merchantWebhookDelivery";
+import {
+  enqueueDelivery,
+  processPendingDeliveries,
+} from "../services/merchantWebhookDelivery";
 import { runSettlementForDate } from "../services/settlement";
 import { autoApprovePendingKyc } from "../services/kyc";
 
 const EXPIRE_INTERVAL_MS = 60_000; // 1 minute
 const RECONCILE_INTERVAL_MS = 5 * 60_000; // 5 minutes
+const WEBHOOK_INTERVAL_MS = 5_000;
 const RECONCILE_AGE_MS = 2 * 60_000; // older than 2 minutes
 const RECONCILE_BATCH = 50;
 const SETTLEMENT_INTERVAL_MS = 60 * 60_000; // hourly check
@@ -70,6 +74,14 @@ async function reconcileRun(): Promise<void> {
   }
 }
 
+async function webhookRun(): Promise<void> {
+  try {
+    await processPendingDeliveries();
+  } catch (e) {
+    console.error("[cron:webhooks] failed", e);
+  }
+}
+
 /**
  * Daily settlement run: settles SUCCESS orders from yesterday into one
  * settlement per merchant. Idempotent — `settlements_date_idx` makes a second
@@ -105,9 +117,11 @@ export function startJobs(): void {
   if (started) return;
   started = true;
   setTimeout(() => void expireRun(), 5_000);
+  setTimeout(() => void webhookRun(), 7_500);
   setTimeout(() => void reconcileRun(), 10_000);
   setTimeout(() => void settlementRun(), 15_000);
   timers.push(setInterval(() => void expireRun(), EXPIRE_INTERVAL_MS));
+  timers.push(setInterval(() => void webhookRun(), WEBHOOK_INTERVAL_MS));
   timers.push(setInterval(() => void reconcileRun(), RECONCILE_INTERVAL_MS));
   timers.push(setInterval(() => void settlementRun(), SETTLEMENT_INTERVAL_MS));
   timers.push(setInterval(() => void kycAutoRun(), KYC_AUTO_INTERVAL_MS));

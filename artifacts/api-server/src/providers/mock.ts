@@ -24,8 +24,9 @@ export const mockProvider: PaymentProvider = {
 
   async createQR(input: ProviderOrderInput): Promise<ProviderOrderResult> {
     const txnId = `TXN_${Date.now()}_${crypto.randomBytes(4).toString("hex")}`;
+    const providerVpa = input.merchantConfig?.providerVpa || PROVIDER_VPA;
     const params = new URLSearchParams({
-      pa: PROVIDER_VPA,
+      pa: providerVpa,
       pn: input.businessName,
       am: input.amount.toFixed(2),
       cu: "INR",

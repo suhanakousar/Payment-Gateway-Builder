@@ -22,12 +22,29 @@ const APP_ID = process.env["CASHFREE_APP_ID"] ?? "";
 const SECRET = process.env["CASHFREE_SECRET_KEY"] ?? "";
 const WEBHOOK_SECRET =
   process.env["CASHFREE_WEBHOOK_SECRET"] ?? SECRET ?? process.env["WEBHOOK_SECRET"] ?? "dev-webhook-secret";
-const CF_BASE = process.env["CASHFREE_BASE"] ?? "https://sandbox.cashfree.com/pg";
-const PROVIDER_VPA = process.env["CASHFREE_VPA"] ?? "paylite.cf@cashfree";
 const LIVE = Boolean(APP_ID && SECRET);
+const CF_BASE =
+  process.env["CASHFREE_BASE"] ??
+  (LIVE ? "https://api.cashfree.com/pg" : "https://sandbox.cashfree.com/pg");
+const PROVIDER_VPA = process.env["CASHFREE_VPA"] ?? "paylite.cf@cashfree";
 
 function cfId(prefix: string): string {
   return `${prefix}_${crypto.randomBytes(8).toString("hex")}`;
+}
+
+function getHostedCheckoutBase(): string {
+  const host = (() => {
+    try {
+      return new URL(CF_BASE).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+
+  if (host.includes("sandbox")) {
+    return "https://payments-test.cashfree.com";
+  }
+  return "https://payments.cashfree.com";
 }
 
 function hmacBase64(secret: string, payload: string): string {
@@ -40,6 +57,10 @@ export const cashfreeProvider: PaymentProvider = {
   isAvailable: () => true,
 
   async createQR(input: ProviderOrderInput): Promise<ProviderOrderResult> {
+    const providerVpa = input.merchantConfig?.providerVpa || PROVIDER_VPA;
+    const customerId =
+      input.merchantConfig?.providerMerchantId ||
+      `cust_${crypto.randomBytes(4).toString("hex")}`;
     if (LIVE) {
       const orderRes = await fetch(`${CF_BASE}/orders`, {
         method: "POST",
@@ -53,11 +74,20 @@ export const cashfreeProvider: PaymentProvider = {
           order_amount: Math.round(input.amount * 100) / 100,
           order_currency: "INR",
           order_id: input.orderId,
+          order_meta: input.merchantConfig?.providerReference
+            ? { return_url: input.merchantConfig.providerReference }
+            : undefined,
           customer_details: {
-            customer_id: `cust_${crypto.randomBytes(4).toString("hex")}`,
+            customer_id: customerId,
             customer_name: input.customerName ?? input.businessName,
             customer_email: input.customerEmail ?? "noreply@paylite.in",
             customer_phone: "9999999999",
+          },
+          order_tags: {
+            merchant_id: input.merchantConfig?.merchantId ?? "",
+            provider_merchant_id: input.merchantConfig?.providerMerchantId ?? "",
+            provider_store_id: input.merchantConfig?.providerStoreId ?? "",
+            provider_terminal_id: input.merchantConfig?.providerTerminalId ?? "",
           },
         }),
       });
@@ -65,27 +95,20 @@ export const cashfreeProvider: PaymentProvider = {
         throw new Error(`Cashfree order failed ${orderRes.status}`);
       }
       const order = (await orderRes.json()) as { cf_order_id: string; payment_session_id: string };
-      const qrString = `upi://pay?${new URLSearchParams({
-        pa: PROVIDER_VPA,
-        pn: input.businessName,
-        am: input.amount.toFixed(2),
-        cu: "INR",
-        tn: input.orderId,
-      }).toString()}`;
-      const qrImage = await QRCode.toDataURL(qrString, { width: 320, margin: 1 });
+      const checkoutUrl = `${getHostedCheckoutBase()}/order/#${order.payment_session_id}`;
       return {
-        txnId: order.cf_order_id,
+        txnId: input.orderId,
         providerOrderId: order.cf_order_id,
-        qrString,
-        qrImage,
-        checkoutUrl: `https://payments.cashfree.com/order/#${order.payment_session_id}`,
+        qrString: checkoutUrl,
+        qrImage: null,
+        checkoutUrl,
       };
     }
 
     // Sandbox stub
     const orderId = cfId("cf_order");
     const qrString = `upi://pay?${new URLSearchParams({
-      pa: PROVIDER_VPA,
+      pa: providerVpa,
       pn: input.businessName,
       am: input.amount.toFixed(2),
       cu: "INR",
@@ -96,7 +119,22 @@ export const cashfreeProvider: PaymentProvider = {
     return { txnId: orderId, providerOrderId: orderId, qrString, qrImage };
   },
 
-  async fetchPaymentStatus(_txnId: string): Promise<ProviderStatus> {
+  async fetchPaymentStatus(txnId: string): Promise<ProviderStatus> {
+    if (!LIVE) return "PENDING";
+    const res = await fetch(`${CF_BASE}/orders/${encodeURIComponent(txnId)}`, {
+      method: "GET",
+      headers: {
+        "x-client-id": APP_ID,
+        "x-client-secret": SECRET,
+        "x-api-version": "2023-08-01",
+      },
+    });
+    if (!res.ok) return "PENDING";
+    const order = (await res.json()) as { order_status?: string };
+    const status = order.order_status?.toUpperCase();
+    if (status === "PAID") return "SUCCESS";
+    if (status === "EXPIRED" || status === "TERMINATED") return "EXPIRED";
+    if (status === "FAILED") return "FAILED";
     return "PENDING";
   },
 

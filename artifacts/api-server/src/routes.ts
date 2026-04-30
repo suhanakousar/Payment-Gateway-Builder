@@ -50,6 +50,12 @@ router.post("/auth/login", authLimiter, csrfProtection, auth.login);
 router.post("/auth/logout", csrfProtection, auth.logout);
 router.get("/auth/me", requireAuth, auth.me);
 router.put("/merchant/kyc", requireAuth, csrfProtection, auth.updateKyc);
+router.put(
+  "/merchant/provider-config",
+  requireAuth,
+  csrfProtection,
+  auth.updateProviderConfig,
+);
 
 // KYC docs
 router.get("/merchant/kyc/docs", requireAuth, kyc.listDocs);

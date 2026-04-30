@@ -1,4 +1,5 @@
 import * as merchantWebhooksRepo from "../repositories/merchantWebhooks";
+import * as deliveryJobsRepo from "../repositories/webhookDeliveryJobs";
 import * as logsRepo from "../repositories/webhookLogs";
 import { hmacSha256Hex } from "../utils/crypto";
 import { toPublic } from "./orders";
@@ -7,6 +8,8 @@ import type { Order } from "@workspace/db";
 const MAX_ATTEMPTS = 3;
 const BACKOFF_MS = [0, 5_000, 15_000];
 const TIMEOUT_MS = 7_000;
+const CLAIM_BATCH = 20;
+const STALE_LOCK_MS = 60_000;
 
 export type WebhookEvent =
   | "payment.success"
@@ -14,23 +17,6 @@ export type WebhookEvent =
   | "payment.refunded"
   | "payment.disputed"
   | "test.ping";
-
-interface DeliveryJob {
-  order: Order;
-  event: WebhookEvent;
-  attempt: number;
-  webhookId: string;
-  url: string;
-  secret: string;
-  payload: string;
-}
-
-/**
- * Lightweight in-memory queue. Persistence isn't required: failed deliveries
- * are recorded with status RETRY and re-attempted by the periodic worker.
- */
-const queue: DeliveryJob[] = [];
-let timer: NodeJS.Timeout | null = null;
 
 function buildPayload(order: Order, event: WebhookEvent): string {
   return JSON.stringify({
@@ -50,36 +36,20 @@ export async function enqueueDelivery(input: {
   if (targets.length === 0) return;
 
   const payload = buildPayload(input.order, input.event);
-  for (const t of targets) {
-    queue.push({
-      order: input.order,
-      event: input.event,
-      attempt: 1,
-      webhookId: t.id,
+  await deliveryJobsRepo.enqueueMany(
+    targets.map((t) => ({
+      orderId: input.order.id,
+      merchantWebhookId: t.id,
       url: t.webhookUrl,
       secret: t.webhookSecret,
       payload,
-    });
-  }
-  scheduleProcess();
+      event: input.event,
+    })),
+  );
 }
 
-function scheduleProcess(): void {
-  if (timer) return;
-  timer = setTimeout(() => {
-    timer = null;
-    void processQueue();
-  }, 50);
-}
-
-async function processQueue(): Promise<void> {
-  while (queue.length > 0) {
-    const job = queue.shift()!;
-    await runJob(job);
-  }
-}
-
-async function runJob(job: DeliveryJob): Promise<void> {
+async function runJob(job: Awaited<ReturnType<typeof deliveryJobsRepo.claimReady>>[number]): Promise<void> {
+  const attempt = job.attempt + 1;
   const signature = hmacSha256Hex(job.secret, job.payload);
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -96,7 +66,7 @@ async function runJob(job: DeliveryJob): Promise<void> {
         "user-agent": "PayLite-Webhook/1.0",
         "x-paylite-event": job.event,
         "x-paylite-signature": signature,
-        "x-paylite-attempt": String(job.attempt),
+        "x-paylite-attempt": String(attempt),
       },
       body: job.payload,
       signal: controller.signal,
@@ -111,26 +81,54 @@ async function runJob(job: DeliveryJob): Promise<void> {
     clearTimeout(timeoutHandle);
   }
 
-  const finalAttempt = job.attempt >= MAX_ATTEMPTS;
+  const finalAttempt = attempt >= MAX_ATTEMPTS;
   const status = ok ? "SENT" : finalAttempt ? "FAILED" : "RETRY";
   await logsRepo.insertLog({
-    orderId: job.order.id,
-    merchantWebhookId: job.webhookId,
+    orderId: job.orderId,
+    merchantWebhookId: job.merchantWebhookId,
     event: job.event,
     requestBody: job.payload.slice(0, 4096),
-    attempt: job.attempt,
+    attempt,
     status,
     responseCode,
     responseBody,
     error,
   });
 
-  if (!ok && !finalAttempt) {
-    const delay = BACKOFF_MS[job.attempt] ?? 15_000;
-    setTimeout(() => {
-      queue.push({ ...job, attempt: job.attempt + 1 });
-      scheduleProcess();
-    }, delay);
+  if (ok) {
+    await deliveryJobsRepo.markSent(job.id, {
+      attempt,
+      responseCode,
+      responseBody,
+    });
+    return;
+  }
+
+  if (finalAttempt) {
+    await deliveryJobsRepo.markFailed(job.id, {
+      attempt,
+      responseCode,
+      responseBody,
+      error,
+    });
+    return;
+  }
+
+  const delay = BACKOFF_MS[attempt] ?? 15_000;
+  await deliveryJobsRepo.markRetry(job.id, {
+    attempt,
+    availableAt: new Date(Date.now() + delay),
+    responseCode,
+    responseBody,
+    error,
+  });
+}
+
+export async function processPendingDeliveries(): Promise<void> {
+  await deliveryJobsRepo.releaseStaleLocks(STALE_LOCK_MS);
+  const jobs = await deliveryJobsRepo.claimReady(CLAIM_BATCH);
+  for (const job of jobs) {
+    await runJob(job);
   }
 }
 

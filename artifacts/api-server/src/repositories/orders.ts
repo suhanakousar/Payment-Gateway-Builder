@@ -2,16 +2,33 @@ import { db } from "@workspace/db";
 import { ordersTable, type Order, type InsertOrder } from "@workspace/db";
 import { and, desc, eq, gte, lte, sql, ilike, or } from "drizzle-orm";
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export async function insertOrder(values: InsertOrder): Promise<Order> {
   const [row] = await db.insert(ordersTable).values(values).returning();
   return row!;
 }
 
 export async function findById(id: string): Promise<Order | null> {
+  if (!UUID_RE.test(id)) return null;
   const rows = await db
     .select()
     .from(ordersTable)
     .where(eq(ordersTable.id, id))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+export async function findByPublicId(idOrOrderId: string): Promise<Order | null> {
+  if (UUID_RE.test(idOrOrderId)) {
+    const byId = await findById(idOrOrderId);
+    if (byId) return byId;
+  }
+  const rows = await db
+    .select()
+    .from(ordersTable)
+    .where(eq(ordersTable.orderId, idOrOrderId))
     .limit(1);
   return rows[0] ?? null;
 }
@@ -144,7 +161,7 @@ export async function markPaid(opts: {
 export async function markFailed(orderId: string): Promise<Order | null> {
   const [row] = await db
     .update(ordersTable)
-    .set({ status: "FAILED" })
+    .set({ status: "FAILED", paidAt: null })
     .where(eq(ordersTable.id, orderId))
     .returning();
   return row ?? null;
