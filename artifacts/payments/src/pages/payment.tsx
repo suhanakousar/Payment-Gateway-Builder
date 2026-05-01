@@ -125,7 +125,7 @@ export default function PaymentPage() {
     };
   }, [order?.qrString]);
 
-  const showDemoControls = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_CONTROLS === "true";
+  const showDemoControls = import.meta.env.DEV;
 
   async function simulate(outcome: "SUCCESS" | "FAILED") {
     if (!order?.txnId) return;
