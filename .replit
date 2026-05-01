@@ -49,7 +49,7 @@ args = "PORT=19926 BASE_PATH=/ pnpm --filter @workspace/payments run dev"
 waitForPort = 19926
 
 [agent]
-stack = "PNPM_WORKSPACE"
+stack = "BEST_EFFORT_FALLBACK"
 expertMode = true
 
 [postMerge]
