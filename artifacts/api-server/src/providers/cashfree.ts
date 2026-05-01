@@ -219,7 +219,7 @@ export const cashfreeProvider: PaymentProvider = {
   },
 
   async fetchPaymentStatus(txnId: string): Promise<ProviderStatus> {
-    if (!LIVE) return "SUCCESS";
+    if (!LIVE) return "PENDING";
     try {
       const order = await cfRequest<{ order_status?: string }>(
         `/orders/${encodeURIComponent(txnId)}`,

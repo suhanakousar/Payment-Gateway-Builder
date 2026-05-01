@@ -10,6 +10,7 @@ import {
   ExternalLink,
   AlertTriangle,
   Loader2,
+  CheckCircle2,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -284,6 +285,44 @@ function RefundButton({ order }: { order: OrderRow }) {
   );
 }
 
+function SimulateButton({ order }: { order: OrderRow }) {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () =>
+      api<{ ok: boolean; status: string }>(`/orders/${order.txnId}/simulate`, {
+        method: "POST",
+        body: { outcome: "SUCCESS" },
+      }),
+    onSuccess: () => {
+      toast.success("Payment marked as received");
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+    onError: (e) => {
+      toast.error(e instanceof ApiError ? e.message : "Could not confirm payment");
+    },
+  });
+
+  if (order.status !== "PENDING" || !order.txnId) return null;
+
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      className="h-7 text-xs text-emerald-700 border-emerald-200 hover:bg-emerald-50"
+      disabled={mutation.isPending}
+      onClick={() => mutation.mutate()}
+    >
+      {mutation.isPending ? (
+        <Loader2 size={12} className="mr-1 animate-spin" />
+      ) : (
+        <CheckCircle2 size={12} className="mr-1" />
+      )}
+      Mark paid
+    </Button>
+  );
+}
+
 export default function Orders() {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("ALL");
@@ -443,7 +482,10 @@ export default function Orders() {
                       {new Date(o.createdAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <RefundButton order={o} />
+                      <div className="flex items-center justify-end gap-1.5">
+                        <SimulateButton order={o} />
+                        <RefundButton order={o} />
+                      </div>
                     </td>
                   </motion.tr>
                 ))}

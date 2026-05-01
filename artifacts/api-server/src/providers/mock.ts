@@ -43,7 +43,7 @@ export const mockProvider: PaymentProvider = {
   },
 
   async fetchPaymentStatus(_txnId: string): Promise<ProviderStatus> {
-    return "SUCCESS";
+    return "PENDING";
   },
 
   async refund(_txnId: string, _amount: number): Promise<ProviderRefundResult> {
