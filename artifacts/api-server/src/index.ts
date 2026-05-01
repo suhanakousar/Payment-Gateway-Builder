@@ -1,3 +1,4 @@
+import "./utils/loadEnv";
 import app from "./app";
 import { logger } from "./utils/logger";
 import { startJobs, stopJobs } from "./jobs";

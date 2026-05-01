@@ -1,3 +1,4 @@
+import "../src/utils/loadEnv";
 import { db, merchantsTable, ordersTable, pool } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import bcrypt from "bcryptjs";
