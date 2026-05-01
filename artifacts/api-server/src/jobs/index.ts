@@ -10,9 +10,9 @@ import { autoApprovePendingKyc } from "../services/kyc";
 import { syncPendingVendors } from "../services/vendor";
 
 const EXPIRE_INTERVAL_MS = 60_000; // 1 minute
-const RECONCILE_INTERVAL_MS = 5 * 60_000; // 5 minutes
+const RECONCILE_INTERVAL_MS = 10_000; // 10 seconds
 const WEBHOOK_INTERVAL_MS = 5_000;
-const RECONCILE_AGE_MS = 2 * 60_000; // older than 2 minutes
+const RECONCILE_AGE_MS = 20_000; // older than 20 seconds
 const RECONCILE_BATCH = 50;
 const SETTLEMENT_INTERVAL_MS = 60 * 60_000; // hourly check
 const KYC_AUTO_INTERVAL_MS = 5_000; // dev: poll for SUBMITTED kyc to auto-approve

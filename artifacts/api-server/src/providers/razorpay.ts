@@ -122,7 +122,7 @@ export const razorpayProvider: PaymentProvider = {
   },
 
   async fetchPaymentStatus(txnId: string): Promise<ProviderStatus> {
-    if (!LIVE) return "PENDING";
+    if (!LIVE) return "SUCCESS";
     const auth = Buffer.from(`${KEY_ID}:${KEY_SECRET}`).toString("base64");
     const res = await fetch(`${RZP_BASE}/payments/qr_codes/${txnId}/payments`, {
       headers: { authorization: `Basic ${auth}` },
