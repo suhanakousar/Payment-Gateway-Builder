@@ -40,6 +40,10 @@ const schema = z.object({
     .min(6, "Account number too short")
     .max(20, "Account number too long")
     .regex(/^\d+$/, "Digits only"),
+  bankAccountHolderName: z
+    .string()
+    .min(2, "Holder name required")
+    .max(120, "Holder name too long"),
   ifsc: z
     .string()
     .min(6, "IFSC too short")
@@ -154,7 +158,7 @@ export default function Kyc() {
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
-    defaultValues: { pan: "", bankAccount: "", ifsc: "" },
+    defaultValues: { pan: "", bankAccount: "", bankAccountHolderName: "", ifsc: "" },
   });
   const providerForm = useForm<ProviderValues>({
     resolver: zodResolver(providerSchema),
@@ -209,7 +213,7 @@ export default function Kyc() {
     onSuccess: async () => {
       toast.success("Details saved — now upload your documents");
       await refresh();
-      form.reset({ pan: "", bankAccount: "", ifsc: "" });
+      form.reset({ pan: "", bankAccount: "", bankAccountHolderName: "", ifsc: "" });
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : "Save failed"),
   });
@@ -304,6 +308,49 @@ export default function Kyc() {
         </div>
       </motion.div>
 
+      {(isComplete && merchant?.providerStatus !== "ACTIVE") && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="border rounded-xl p-5 flex items-start gap-3 border-amber-200 bg-amber-50 text-amber-900"
+        >
+          <Clock size={18} className="shrink-0 mt-0.5" />
+          <div>
+            <div className="text-sm font-medium">
+              Payment provider activation in progress
+            </div>
+            <div className="text-xs mt-0.5 opacity-80">
+              Cashfree is verifying your bank account
+              {merchant?.providerStatus
+                ? ` (status: ${merchant.providerStatus})`
+                : ""}
+              . You can't create live orders until this completes — usually a few minutes.
+            </div>
+          </div>
+        </motion.div>
+      )}
+      {isComplete && merchant?.providerStatus === "ACTIVE" && (
+        <motion.div
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="border rounded-xl p-5 flex items-start gap-3 border-emerald-200 bg-emerald-50 text-emerald-900"
+        >
+          <Check size={18} className="shrink-0 mt-0.5" />
+          <div>
+            <div className="text-sm font-medium">
+              Provider vendor active — ready to accept payments
+            </div>
+            <div className="text-xs mt-0.5 opacity-80">
+              Funds collected via your QRs will settle to{" "}
+              <span className="font-mono">
+                {merchant.bankAccount ?? "your linked bank"}
+              </span>{" "}
+              ({merchant.ifsc ?? ""}) on T+1.
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Stepper */}
       <div className="flex items-center justify-between gap-2">
         {STEPS.map((s, i) => {
@@ -391,6 +438,22 @@ export default function Kyc() {
                   </FormControl>
                   <FormDescription className="text-xs">
                     10-character permanent account number.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="bankAccountHolderName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Account holder name</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Name as on bank passbook" {...field} />
+                  </FormControl>
+                  <FormDescription className="text-xs">
+                    Must exactly match the name on your bank account — used by the provider to verify and route settlements.
                   </FormDescription>
                   <FormMessage />
                 </FormItem>

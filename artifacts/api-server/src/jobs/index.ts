@@ -7,6 +7,7 @@ import {
 } from "../services/merchantWebhookDelivery";
 import { runSettlementForDate } from "../services/settlement";
 import { autoApprovePendingKyc } from "../services/kyc";
+import { syncPendingVendors } from "../services/vendor";
 
 const EXPIRE_INTERVAL_MS = 60_000; // 1 minute
 const RECONCILE_INTERVAL_MS = 5 * 60_000; // 5 minutes
@@ -15,6 +16,7 @@ const RECONCILE_AGE_MS = 2 * 60_000; // older than 2 minutes
 const RECONCILE_BATCH = 50;
 const SETTLEMENT_INTERVAL_MS = 60 * 60_000; // hourly check
 const KYC_AUTO_INTERVAL_MS = 5_000; // dev: poll for SUBMITTED kyc to auto-approve
+const VENDOR_SYNC_INTERVAL_MS = 2 * 60_000; // every 2 min: poll provider for PENDING vendor activations
 
 let started = false;
 const timers: NodeJS.Timeout[] = [];
@@ -113,6 +115,15 @@ async function kycAutoRun(): Promise<void> {
   }
 }
 
+async function vendorSyncRun(): Promise<void> {
+  try {
+    const n = await syncPendingVendors();
+    if (n > 0) console.log(`[cron:vendors] updated ${n} vendor states`);
+  } catch (e) {
+    console.error("[cron:vendors] failed", e);
+  }
+}
+
 export function startJobs(): void {
   if (started) return;
   started = true;
@@ -120,11 +131,13 @@ export function startJobs(): void {
   setTimeout(() => void webhookRun(), 7_500);
   setTimeout(() => void reconcileRun(), 10_000);
   setTimeout(() => void settlementRun(), 15_000);
+  setTimeout(() => void vendorSyncRun(), 20_000);
   timers.push(setInterval(() => void expireRun(), EXPIRE_INTERVAL_MS));
   timers.push(setInterval(() => void webhookRun(), WEBHOOK_INTERVAL_MS));
   timers.push(setInterval(() => void reconcileRun(), RECONCILE_INTERVAL_MS));
   timers.push(setInterval(() => void settlementRun(), SETTLEMENT_INTERVAL_MS));
   timers.push(setInterval(() => void kycAutoRun(), KYC_AUTO_INTERVAL_MS));
+  timers.push(setInterval(() => void vendorSyncRun(), VENDOR_SYNC_INTERVAL_MS));
   console.log("[jobs] background workers started");
 }
 

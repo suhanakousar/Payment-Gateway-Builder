@@ -63,6 +63,7 @@ export async function updateKycFields(
   patch: Partial<{
     pan: string | null;
     bankAccount: string | null;
+    bankAccountHolderName: string | null;
     ifsc: string | null;
     kycStatus: string;
     kycSubmittedAt: Date | null;
@@ -77,6 +78,36 @@ export async function updateKycFields(
     .where(eq(merchantsTable.id, id))
     .returning();
   return row!;
+}
+
+/** Atomically set the merchant's Cashfree (or other provider) vendor record. */
+export async function setProviderVendor(
+  id: string,
+  patch: {
+    providerMerchantId: string | null;
+    providerStatus: string;
+  },
+): Promise<Merchant> {
+  const [row] = await db
+    .update(merchantsTable)
+    .set(patch)
+    .where(eq(merchantsTable.id, id))
+    .returning();
+  return row!;
+}
+
+/** Approved merchants whose vendor record is missing or PENDING — used by the sync cron. */
+export async function findApprovedNeedingVendor(): Promise<Merchant[]> {
+  return db
+    .select()
+    .from(merchantsTable)
+    .where(
+      and(
+        eq(merchantsTable.kycStatus, "APPROVED"),
+        sql`(${merchantsTable.providerStatus} <> 'ACTIVE' OR ${merchantsTable.providerMerchantId} IS NULL)`,
+      ),
+    )
+    .limit(50);
 }
 
 /** Pick merchants whose KYC has been SUBMITTED for at least the given seconds. */

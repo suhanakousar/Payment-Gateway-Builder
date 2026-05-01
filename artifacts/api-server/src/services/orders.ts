@@ -47,30 +47,19 @@ export interface OrderPublic {
 }
 
 export function toPublic(o: Order): OrderPublic {
-  const isHostedCheckout =
-    o.qrString?.startsWith("http://") || o.qrString?.startsWith("https://");
-  const receiverVpa = (() => {
-    if (!o.qrString || isHostedCheckout) return null;
+  const upiParams = (() => {
+    if (!o.qrString) return null;
     try {
       const query = o.qrString.startsWith("upi://pay?")
         ? o.qrString.slice("upi://pay?".length)
         : o.qrString;
-      return new URLSearchParams(query).get("pa");
+      return new URLSearchParams(query);
     } catch {
       return null;
     }
   })();
-  const receiverLabel = (() => {
-    if (!o.qrString || isHostedCheckout) return null;
-    try {
-      const query = o.qrString.startsWith("upi://pay?")
-        ? o.qrString.slice("upi://pay?".length)
-        : o.qrString;
-      return new URLSearchParams(query).get("pn");
-    } catch {
-      return null;
-    }
-  })();
+  const receiverVpa = upiParams?.get("pa") ?? null;
+  const receiverLabel = upiParams?.get("pn") ?? null;
   return {
     id: o.id,
     orderId: o.orderId,
@@ -108,7 +97,7 @@ export async function createOrder(input: {
   customerEmail?: string | null;
   note?: string | null;
   preferredProvider?: string | null;
-}): Promise<{ order: OrderPublic; qrImage: string | null; checkoutUrl?: string }> {
+}): Promise<{ order: OrderPublic; qrImage: string | null }> {
   if (!input.orderId.trim()) throw new OrderError("orderId is required");
   if (input.amount <= 0) throw new OrderError("amount must be positive");
   if (input.amount > 1_000_000) {
@@ -151,9 +140,18 @@ export async function createOrder(input: {
     },
   };
 
-  if (!providerInput.merchantConfig.providerVpa) {
+  // To accept real money, the merchant must be registered as a vendor /
+  // sub-account on the provider so funds can be split + settled to their
+  // bank. Block order creation until vendor is ACTIVE.
+  if (!providerInput.merchantConfig.providerMerchantId) {
     throw new OrderError(
-      "Add the merchant's receiving UPI ID in KYC & bank -> Provider mapping before generating a QR",
+      "Merchant is not yet registered with the payment provider — complete KYC and wait for vendor approval",
+      412,
+    );
+  }
+  if (merchant.providerStatus !== "ACTIVE") {
+    throw new OrderError(
+      `Merchant's provider vendor is not ACTIVE yet (status: ${merchant.providerStatus}). Wait for the provider to verify the bank account.`,
       412,
     );
   }
@@ -223,7 +221,6 @@ export async function createOrder(input: {
   return {
     order: toPublic(saved),
     qrImage: chosen.result.qrImage ?? null,
-    checkoutUrl: chosen.result.checkoutUrl,
   };
 }
 

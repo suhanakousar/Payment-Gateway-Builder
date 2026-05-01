@@ -17,6 +17,7 @@ export const merchantsTable = pgTable("merchants", {
   providerStatus: text("provider_status").notNull().default("PENDING"),
   pan: text("pan"),
   bankAccount: text("bank_account"),
+  bankAccountHolderName: text("bank_account_holder_name"),
   ifsc: text("ifsc"),
   // KYC workflow: NOT_STARTED -> SUBMITTED -> UNDER_REVIEW -> APPROVED | REJECTED
   kycStatus: text("kyc_status").notNull().default("NOT_STARTED"),

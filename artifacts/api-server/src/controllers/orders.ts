@@ -23,7 +23,7 @@ export async function create(req: Request, res: Response): Promise<void> {
     return;
   }
   try {
-    const { order, qrImage, checkoutUrl } = await ordersService.createOrder({
+    const { order, qrImage } = await ordersService.createOrder({
       merchantId: req.merchant!.id,
       orderId: parsed.data.orderId,
       amount: parsed.data.amount,
@@ -31,7 +31,7 @@ export async function create(req: Request, res: Response): Promise<void> {
       customerEmail: parsed.data.customerEmail ?? null,
       note: parsed.data.note ?? null,
     });
-    res.status(201).json({ order, qrImage, checkoutUrl });
+    res.status(201).json({ order, qrImage });
   } catch (e) {
     handleError(res, e);
   }

@@ -21,6 +21,7 @@ export interface MerchantPublic {
   providerStatus: string;
   pan: string | null;
   bankAccount: string | null;
+  bankAccountHolderName: string | null;
   ifsc: string | null;
   kycStatus: string;
   kycSubmittedAt: string | null;
@@ -47,6 +48,7 @@ export function toPublic(m: Merchant, opts: { reveal?: boolean } = {}): Merchant
     providerStatus: m.providerStatus,
     pan: opts.reveal ? pan : maskPan(pan),
     bankAccount: opts.reveal ? bank : maskBankAccount(bank),
+    bankAccountHolderName: m.bankAccountHolderName,
     ifsc: m.ifsc,
     kycStatus: m.kycStatus,
     kycSubmittedAt: m.kycSubmittedAt ? m.kycSubmittedAt.toISOString() : null,
@@ -68,12 +70,18 @@ export async function getById(id: string): Promise<MerchantPublic | null> {
  */
 export async function saveKycDetails(
   id: string,
-  input: { pan: string; bankAccount: string; ifsc: string },
+  input: {
+    pan: string;
+    bankAccount: string;
+    bankAccountHolderName: string;
+    ifsc: string;
+  },
 ): Promise<MerchantPublic | null> {
   const ifsc = input.ifsc.toUpperCase();
   const updated = await merchantsRepo.updateKycFields(id, {
     pan: encryptString(input.pan.toUpperCase()),
     bankAccount: encryptString(input.bankAccount),
+    bankAccountHolderName: input.bankAccountHolderName.trim(),
     ifsc,
     kycStatus: "SUBMITTED",
     kycSubmittedAt: new Date(),

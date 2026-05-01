@@ -2,9 +2,34 @@ import type { Request, Response } from "express";
 import {
   SignupBody,
   LoginBody,
-  UpdateKycBody,
 } from "@workspace/api-zod";
 import { z } from "zod";
+
+const UpdateKycBody = z.object({
+  pan: z
+    .string()
+    .trim()
+    .min(5, "PAN looks too short")
+    .max(20)
+    .regex(/^[A-Za-z0-9]+$/, "Use letters and digits only"),
+  bankAccount: z
+    .string()
+    .trim()
+    .min(6, "Account number too short")
+    .max(20)
+    .regex(/^\d+$/, "Digits only"),
+  bankAccountHolderName: z
+    .string()
+    .trim()
+    .min(2, "Holder name required")
+    .max(120),
+  ifsc: z
+    .string()
+    .trim()
+    .min(6, "IFSC too short")
+    .max(15)
+    .regex(/^[A-Za-z0-9]+$/, "IFSC must be letters and digits only"),
+});
 import * as authService from "../services/auth";
 import * as merchantService from "../services/merchant";
 import { setAuthCookie, clearAuthCookie } from "../middlewares/auth";

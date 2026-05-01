@@ -94,7 +94,6 @@ export const razorpayProvider: PaymentProvider = {
         providerOrderId: order.id,
         qrString: qr.qr_code,
         qrImage,
-        checkoutUrl: `https://checkout.razorpay.com/v1/checkout.html?order_id=${order.id}`,
       };
     }
 

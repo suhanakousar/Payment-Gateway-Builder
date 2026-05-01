@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -54,6 +54,40 @@ function StatusBanner({ status }: { status: string }) {
   return null;
 }
 
+function formatRemaining(ms: number): string {
+  if (ms <= 0) return "00:00";
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60).toString().padStart(2, "0");
+  const s = (total % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function Countdown({ expiresAt }: { expiresAt: string }) {
+  const expiresMs = useMemo(() => new Date(expiresAt).getTime(), [expiresAt]);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const remaining = expiresMs - now;
+  const expiring = remaining > 0 && remaining < 60_000;
+  return (
+    <div
+      className={
+        "rounded-md border px-3 py-2 text-xs flex items-center justify-center gap-2 " +
+        (remaining <= 0
+          ? "border-rose-200 bg-rose-50 text-rose-700"
+          : expiring
+            ? "border-amber-200 bg-amber-50 text-amber-800"
+            : "border-neutral-200 bg-neutral-50 text-neutral-700")
+      }
+    >
+      <Clock size={12} />
+      {remaining <= 0 ? "Expired" : `Expires in ${formatRemaining(remaining)}`}
+    </div>
+  );
+}
+
 export default function PaymentPage() {
   const [, params] = useRoute("/payment/:orderId");
   const orderId = params?.orderId ?? "";
@@ -70,15 +104,11 @@ export default function PaymentPage() {
   });
 
   const order = orderQuery.data;
-  const checkoutUrl =
-    order?.qrString?.startsWith("http://") || order?.qrString?.startsWith("https://")
-      ? order.qrString
-      : null;
 
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    if (!order?.qrString || checkoutUrl) {
+    if (!order?.qrString) {
       setQrDataUrl(null);
       return;
     }
@@ -93,7 +123,7 @@ export default function PaymentPage() {
     return () => {
       cancelled = true;
     };
-  }, [order?.qrString, checkoutUrl]);
+  }, [order?.qrString]);
 
   const showDemoControls = import.meta.env.DEV && import.meta.env.VITE_ENABLE_DEMO_CONTROLS === "true";
 
@@ -157,11 +187,19 @@ export default function PaymentPage() {
             <div className="mt-1 text-4xl font-semibold tabular-nums tracking-tight">
               ₹{order.amount.toLocaleString("en-IN")}
             </div>
+            {order.receiverLabel && (
+              <div className="mt-1 text-sm font-medium text-neutral-800">
+                {order.receiverLabel}
+              </div>
+            )}
             {order.customerName && (
-              <div className="mt-1 text-sm text-neutral-600">
+              <div className="mt-0.5 text-sm text-neutral-600">
                 For {order.customerName}
               </div>
             )}
+            <div className="mt-1 text-xs text-neutral-500 font-mono">
+              Order #{order.orderId}
+            </div>
           </div>
 
           <AnimatePresence mode="wait">
@@ -173,45 +211,23 @@ export default function PaymentPage() {
                 exit={{ opacity: 0 }}
                 className="space-y-4"
               >
-                {checkoutUrl ? (
-                  <div className="border border-neutral-200 rounded-lg p-6 bg-gradient-to-b from-neutral-50 to-white text-center space-y-3">
-                    <div className="mx-auto h-14 w-14 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                      <Smartphone size={24} />
+                <div className="border border-neutral-200 rounded-lg p-3 flex items-center justify-center bg-white">
+                  {qrDataUrl ? (
+                    <img src={qrDataUrl} alt="UPI QR code" className="rounded" width={240} height={240} />
+                  ) : (
+                    <div className="h-[240px] w-[240px] flex items-center justify-center text-neutral-400 text-sm">
+                      Generating QR…
                     </div>
-                    <div className="space-y-1">
-                      <div className="text-sm font-medium text-neutral-900">
-                        Secure Cashfree checkout
-                      </div>
-                      <div className="text-xs text-neutral-500">
-                        Tap below to continue payment on Cashfree and complete the transaction.
-                      </div>
-                    </div>
-                    <Button
-                      className="w-full"
-                      onClick={() => {
-                        window.location.href = checkoutUrl;
-                      }}
-                    >
-                      Pay Securely
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="border border-neutral-200 rounded-lg p-3 flex items-center justify-center bg-white">
-                    {qrDataUrl ? (
-                      <img src={qrDataUrl} alt="UPI QR code" className="rounded" width={240} height={240} />
-                    ) : (
-                      <div className="h-[240px] w-[240px] flex items-center justify-center text-neutral-400 text-sm">
-                        Generating QR…
-                      </div>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
+
+                <Countdown expiresAt={order.expiresAt} />
+
                 <div className="flex items-center gap-2 text-xs text-neutral-600 justify-center">
                   <Smartphone size={14} className="text-neutral-400" />
-                  {checkoutUrl
-                    ? "Complete payment on the secure Cashfree page"
-                    : "Open any UPI app and scan to pay"}
+                  Open any UPI app and scan to pay
                 </div>
+
                 {(order.receiverLabel || order.receiverVpa) && (
                   <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
                     Paying to{" "}
@@ -226,7 +242,8 @@ export default function PaymentPage() {
                     ) : null}
                   </div>
                 )}
-                {order.qrString && !checkoutUrl && (
+
+                {order.qrString && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -239,9 +256,10 @@ export default function PaymentPage() {
                     <Copy size={12} className="mr-1.5" /> Copy UPI link
                   </Button>
                 )}
-                <div className="flex items-center justify-center gap-1 text-xs text-neutral-500">
+
+                <div className="flex items-center justify-center gap-1.5 text-xs text-neutral-500">
                   <RefreshCw size={11} className="animate-spin-slow" />
-                  Watching for payment…
+                  Waiting for payment…
                 </div>
               </motion.div>
             )}

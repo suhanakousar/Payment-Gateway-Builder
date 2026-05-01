@@ -17,8 +17,11 @@ export interface ProviderOrderInput {
   businessName: string;
   customerName?: string | null;
   customerEmail?: string | null;
+  /** Customer phone (E.164 or 10-digit Indian) — required by Cashfree's order create. */
+  customerPhone?: string | null;
   merchantConfig?: {
     merchantId: string;
+    /** Provider-side vendor/sub-account id (e.g. Cashfree Easy Split vendor_id, Razorpay acc_xxx). */
     providerMerchantId?: string | null;
     providerStoreId?: string | null;
     providerTerminalId?: string | null;
@@ -27,13 +30,30 @@ export interface ProviderOrderInput {
   };
 }
 
+/** Bank + KYC fields needed to register a merchant as a vendor on the provider side. */
+export interface ProviderVendorInput {
+  merchantId: string;
+  name: string;
+  email: string;
+  phone: string;
+  pan: string;
+  bankAccountNumber: string;
+  bankAccountHolderName: string;
+  ifsc: string;
+}
+
+export interface ProviderVendorResult {
+  vendorId: string;
+  /** PENDING | ACTIVE | REJECTED — provider-side verification state. */
+  status: "PENDING" | "ACTIVE" | "REJECTED";
+  reason?: string | null;
+}
+
 export interface ProviderOrderResult {
   txnId: string;
   providerOrderId: string;
   qrString?: string | null;
   qrImage?: string | null; // data URL PNG
-  /** Hosted checkout URL for non-UPI payment options. Optional. */
-  checkoutUrl?: string;
 }
 
 export interface ProviderRefundResult {
@@ -64,4 +84,12 @@ export interface PaymentProvider {
    * Returns parsed payload, or throws on bad signature / bad payload.
    */
   parseWebhook(rawBody: Buffer, headers: Record<string, string | undefined>): ProviderWebhookPayload;
+  /**
+   * Optional: register a merchant as a vendor / sub-account on the provider so
+   * funds can be auto-split + settled to that merchant's bank. Providers that
+   * don't support sub-accounts (e.g. mock) leave this undefined.
+   */
+  createVendor?(input: ProviderVendorInput): Promise<ProviderVendorResult>;
+  /** Optional: poll the provider for the vendor's current verification state. */
+  getVendorStatus?(vendorId: string): Promise<ProviderVendorResult>;
 }

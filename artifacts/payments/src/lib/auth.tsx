@@ -15,6 +15,7 @@ export interface Merchant {
   providerStatus?: string;
   pan: string | null;
   bankAccount: string | null;
+  bankAccountHolderName: string | null;
   ifsc: string | null;
   kycStatus: string;
   kycSubmittedAt?: string | null;

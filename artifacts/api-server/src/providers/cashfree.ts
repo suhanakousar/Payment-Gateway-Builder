@@ -1,18 +1,24 @@
 import crypto from "node:crypto";
 import QRCode from "qrcode";
-import { hmacSha256Hex, timingSafeEqualHex } from "../utils/crypto";
+import { timingSafeEqualHex } from "../utils/crypto";
 import type {
   PaymentProvider,
   ProviderOrderInput,
   ProviderOrderResult,
   ProviderRefundResult,
   ProviderStatus,
+  ProviderVendorInput,
+  ProviderVendorResult,
   ProviderWebhookPayload,
 } from "./types";
 
 /**
- * Cashfree-shaped adapter. Real API used when CASHFREE_APP_ID +
- * CASHFREE_SECRET_KEY are present; otherwise local stub.
+ * Cashfree provider — single PayLite Cashfree account, multiple merchants
+ * onboarded as Easy Split vendors. Customer pays into Cashfree's nodal; funds
+ * are split + settled to each vendor's bank on T+1.
+ *
+ * Real Cashfree API used when CASHFREE_APP_ID + CASHFREE_SECRET_KEY are
+ * present; otherwise local sandbox stub.
  *
  * Inbound webhook signature scheme (Cashfree v3):
  *   x-webhook-signature = base64(hmac_sha256(secret, timestamp + raw_body))
@@ -21,34 +27,104 @@ import type {
 const APP_ID = process.env["CASHFREE_APP_ID"] ?? "";
 const SECRET = process.env["CASHFREE_SECRET_KEY"] ?? "";
 const WEBHOOK_SECRET =
-  process.env["CASHFREE_WEBHOOK_SECRET"] ?? SECRET ?? process.env["WEBHOOK_SECRET"] ?? "dev-webhook-secret";
+  process.env["CASHFREE_WEBHOOK_SECRET"] ??
+  SECRET ??
+  process.env["WEBHOOK_SECRET"] ??
+  "dev-webhook-secret";
 const LIVE = Boolean(APP_ID && SECRET);
 const CF_BASE =
   process.env["CASHFREE_BASE"] ??
   (LIVE ? "https://api.cashfree.com/pg" : "https://sandbox.cashfree.com/pg");
+const CF_API_VERSION = process.env["CASHFREE_API_VERSION"] ?? "2023-08-01";
 const PROVIDER_VPA = process.env["CASHFREE_VPA"] ?? "paylite.cf@cashfree";
 
 function cfId(prefix: string): string {
   return `${prefix}_${crypto.randomBytes(8).toString("hex")}`;
 }
 
-function getHostedCheckoutBase(): string {
-  const host = (() => {
-    try {
-      return new URL(CF_BASE).hostname.toLowerCase();
-    } catch {
-      return "";
-    }
-  })();
-
-  if (host.includes("sandbox")) {
-    return "https://payments-test.cashfree.com";
-  }
-  return "https://payments.cashfree.com";
+function buildUpiIntent(input: {
+  vpa: string;
+  payeeName: string;
+  amount: number;
+  txnRef: string;
+  note: string;
+}): string {
+  return `upi://pay?${new URLSearchParams({
+    pa: input.vpa,
+    pn: input.payeeName,
+    am: input.amount.toFixed(2),
+    cu: "INR",
+    tn: input.note,
+    tr: input.txnRef,
+  }).toString()}`;
 }
 
 function hmacBase64(secret: string, payload: string): string {
   return crypto.createHmac("sha256", secret).update(payload).digest("base64");
+}
+
+function authHeaders(): Record<string, string> {
+  return {
+    "x-client-id": APP_ID,
+    "x-client-secret": SECRET,
+    "x-api-version": CF_API_VERSION,
+    "content-type": "application/json",
+  };
+}
+
+async function cfRequest<T>(path: string, init: RequestInit): Promise<T> {
+  const res = await fetch(`${CF_BASE}${path}`, {
+    ...init,
+    headers: { ...authHeaders(), ...(init.headers ?? {}) },
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    let detail = text;
+    try {
+      const j = JSON.parse(text) as { message?: string; type?: string };
+      if (j.message) detail = j.message;
+    } catch {
+      // not JSON, use raw text
+    }
+    throw new Error(`Cashfree ${path} ${res.status}: ${detail.slice(0, 200)}`);
+  }
+  return text ? (JSON.parse(text) as T) : ({} as T);
+}
+
+/** Map Cashfree's vendor status string to our enum. */
+function mapVendorStatus(s: string | undefined): ProviderVendorResult["status"] {
+  const v = (s ?? "").toUpperCase();
+  if (v === "ACTIVE" || v === "VERIFIED") return "ACTIVE";
+  if (v === "BLOCKED" || v === "REJECTED" || v === "DELETED") return "REJECTED";
+  return "PENDING";
+}
+
+interface CfOrderCreateResponse {
+  cf_order_id: string;
+  order_id: string;
+  payment_session_id: string;
+  order_status?: string;
+}
+
+interface CfPayResponse {
+  cf_payment_id?: number | string;
+  payment_method?: string;
+  channel?: string;
+  action?: string;
+  data?: {
+    payload?: {
+      qrcode?: string;
+      bharat_qr?: string;
+      default?: string;
+    };
+  };
+}
+
+interface CfVendorResponse {
+  vendor_id?: string;
+  status?: string;
+  remarks?: string;
+  message?: string;
 }
 
 export const cashfreeProvider: PaymentProvider = {
@@ -57,92 +133,185 @@ export const cashfreeProvider: PaymentProvider = {
   isAvailable: () => true,
 
   async createQR(input: ProviderOrderInput): Promise<ProviderOrderResult> {
-    const providerVpa = input.merchantConfig?.providerVpa || PROVIDER_VPA;
+    const vendorId = input.merchantConfig?.providerMerchantId ?? null;
     const customerId =
-      input.merchantConfig?.providerMerchantId ||
-      `cust_${crypto.randomBytes(4).toString("hex")}`;
+      vendorId || `cust_${crypto.randomBytes(4).toString("hex")}`;
+
     if (LIVE) {
-      const orderRes = await fetch(`${CF_BASE}/orders`, {
+      if (!vendorId) {
+        throw new Error(
+          "Merchant has no Cashfree vendor mapping — KYC must complete first",
+        );
+      }
+
+      // 1. Create the order with order_splits → 100% routed to this merchant's
+      //    vendor at settlement time.
+      const order = await cfRequest<CfOrderCreateResponse>("/orders", {
         method: "POST",
-        headers: {
-          "x-client-id": APP_ID,
-          "x-client-secret": SECRET,
-          "x-api-version": "2023-08-01",
-          "content-type": "application/json",
-        },
         body: JSON.stringify({
           order_amount: Math.round(input.amount * 100) / 100,
           order_currency: "INR",
           order_id: input.orderId,
-          order_meta: input.merchantConfig?.providerReference
-            ? { return_url: input.merchantConfig.providerReference }
-            : undefined,
+          order_meta: { payment_methods: "upi" },
+          order_splits: [{ vendor_id: vendorId, percentage: 100 }],
           customer_details: {
             customer_id: customerId,
             customer_name: input.customerName ?? input.businessName,
             customer_email: input.customerEmail ?? "noreply@paylite.in",
-            customer_phone: "9999999999",
+            customer_phone: input.customerPhone ?? "9999999999",
           },
           order_tags: {
             merchant_id: input.merchantConfig?.merchantId ?? "",
-            provider_merchant_id: input.merchantConfig?.providerMerchantId ?? "",
-            provider_store_id: input.merchantConfig?.providerStoreId ?? "",
-            provider_terminal_id: input.merchantConfig?.providerTerminalId ?? "",
+            vendor_id: vendorId,
           },
         }),
       });
-      if (!orderRes.ok) {
-        throw new Error(`Cashfree order failed ${orderRes.status}`);
+
+      // 2. Initiate a UPI-QR-channel payment against the order. Cashfree
+      //    returns the dynamic UPI intent string keyed to its nodal collection
+      //    account — that's what the customer scans.
+      const pay = await cfRequest<CfPayResponse>("/orders/pay", {
+        method: "POST",
+        body: JSON.stringify({
+          payment_session_id: order.payment_session_id,
+          payment_method: { upi: { channel: "qrcode" } },
+        }),
+      });
+
+      const qrString =
+        pay.data?.payload?.qrcode ??
+        pay.data?.payload?.default ??
+        pay.data?.payload?.bharat_qr ??
+        null;
+      if (!qrString) {
+        throw new Error("Cashfree did not return a UPI QR payload");
       }
-      const order = (await orderRes.json()) as { cf_order_id: string; payment_session_id: string };
-      const checkoutUrl = `${getHostedCheckoutBase()}/order/#${order.payment_session_id}`;
+      const qrImage = await QRCode.toDataURL(qrString, { width: 320, margin: 1 });
+
       return {
-        txnId: input.orderId,
+        // Use cf_order_id (globally unique) as txnId so reconciliation +
+        // multi-merchant order id collisions are safe.
+        txnId: order.cf_order_id,
         providerOrderId: order.cf_order_id,
-        qrString: checkoutUrl,
-        qrImage: null,
-        checkoutUrl,
+        qrString,
+        qrImage,
       };
     }
 
-    // Sandbox stub
-    const orderId = cfId("cf_order");
-    const qrString = `upi://pay?${new URLSearchParams({
-      pa: providerVpa,
-      pn: input.businessName,
-      am: input.amount.toFixed(2),
-      cu: "INR",
-      tn: input.orderId,
-      tr: orderId,
-    }).toString()}`;
+    // Sandbox stub — uses merchant VPA (or fallback) for visual fidelity. No
+    // real money will move in this branch.
+    const cfOrderId = cfId("cf_order");
+    const sandboxVpa = input.merchantConfig?.providerVpa || PROVIDER_VPA;
+    const qrString = buildUpiIntent({
+      vpa: sandboxVpa,
+      payeeName: input.businessName,
+      amount: input.amount,
+      txnRef: cfOrderId,
+      note: input.orderId,
+    });
     const qrImage = await QRCode.toDataURL(qrString, { width: 320, margin: 1 });
-    return { txnId: orderId, providerOrderId: orderId, qrString, qrImage };
+    return {
+      txnId: cfOrderId,
+      providerOrderId: cfOrderId,
+      qrString,
+      qrImage,
+    };
   },
 
   async fetchPaymentStatus(txnId: string): Promise<ProviderStatus> {
     if (!LIVE) return "PENDING";
-    const res = await fetch(`${CF_BASE}/orders/${encodeURIComponent(txnId)}`, {
-      method: "GET",
-      headers: {
-        "x-client-id": APP_ID,
-        "x-client-secret": SECRET,
-        "x-api-version": "2023-08-01",
-      },
-    });
-    if (!res.ok) return "PENDING";
-    const order = (await res.json()) as { order_status?: string };
-    const status = order.order_status?.toUpperCase();
-    if (status === "PAID") return "SUCCESS";
-    if (status === "EXPIRED" || status === "TERMINATED") return "EXPIRED";
-    if (status === "FAILED") return "FAILED";
-    return "PENDING";
+    try {
+      const order = await cfRequest<{ order_status?: string }>(
+        `/orders/${encodeURIComponent(txnId)}`,
+        { method: "GET" },
+      );
+      const status = order.order_status?.toUpperCase();
+      if (status === "PAID") return "SUCCESS";
+      if (status === "EXPIRED" || status === "TERMINATED") return "EXPIRED";
+      if (status === "FAILED") return "FAILED";
+      return "PENDING";
+    } catch {
+      return "PENDING";
+    }
   },
 
-  async refund(_txnId: string, _amount: number): Promise<ProviderRefundResult> {
+  async refund(txnId: string, amount: number): Promise<ProviderRefundResult> {
+    if (!LIVE) {
+      return { ok: true, status: "SUCCESS", providerRefundId: cfId("cf_rfnd") };
+    }
+    try {
+      const refund = await cfRequest<{ refund_id?: string; refund_status?: string }>(
+        `/orders/${encodeURIComponent(txnId)}/refunds`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            refund_amount: Math.round(amount * 100) / 100,
+            refund_id: cfId("rfnd"),
+            refund_note: "PayLite refund",
+          }),
+        },
+      );
+      const s = (refund.refund_status ?? "").toUpperCase();
+      const status: ProviderRefundResult["status"] =
+        s === "SUCCESS" ? "SUCCESS" : s === "FAILED" ? "FAILED" : "INITIATED";
+      return { ok: status !== "FAILED", status, providerRefundId: refund.refund_id };
+    } catch (e) {
+      return {
+        ok: false,
+        status: "FAILED",
+        error: e instanceof Error ? e.message : String(e),
+      };
+    }
+  },
+
+  async createVendor(input: ProviderVendorInput): Promise<ProviderVendorResult> {
+    if (!LIVE) {
+      // Sandbox: simulate an instantly-active vendor record so dev demos work
+      // end-to-end without Cashfree credentials.
+      return {
+        vendorId: `sandbox_v_${crypto.randomBytes(4).toString("hex")}`,
+        status: "ACTIVE",
+      };
+    }
+    const res = await cfRequest<CfVendorResponse>("/easy-split/vendors", {
+      method: "POST",
+      body: JSON.stringify({
+        vendor_id: `paylite_${input.merchantId}`,
+        status: "ACTIVE",
+        name: input.name,
+        email: input.email,
+        phone: input.phone,
+        verify_account: true,
+        dashboard_access: false,
+        bank: {
+          account_number: input.bankAccountNumber,
+          account_holder: input.bankAccountHolderName,
+          ifsc: input.ifsc,
+        },
+        kyc_details: {
+          account_type: "BUSINESS",
+          business_type: "INDIVIDUAL",
+          pan: input.pan,
+        },
+      }),
+    });
     return {
-      ok: true,
-      status: "SUCCESS",
-      providerRefundId: cfId("cf_rfnd"),
+      vendorId: res.vendor_id ?? `paylite_${input.merchantId}`,
+      status: mapVendorStatus(res.status),
+      reason: res.remarks ?? res.message ?? null,
+    };
+  },
+
+  async getVendorStatus(vendorId: string): Promise<ProviderVendorResult> {
+    if (!LIVE) return { vendorId, status: "ACTIVE" };
+    const res = await cfRequest<CfVendorResponse>(
+      `/easy-split/vendors/${encodeURIComponent(vendorId)}`,
+      { method: "GET" },
+    );
+    return {
+      vendorId,
+      status: mapVendorStatus(res.status),
+      reason: res.remarks ?? res.message ?? null,
     };
   },
 
@@ -164,14 +333,28 @@ export const cashfreeProvider: PaymentProvider = {
     interface CfPayload {
       type?: string;
       data?: {
-        order?: { order_id?: string };
-        payment?: { cf_payment_id?: number; payment_status?: string; payment_method?: { upi?: unknown; card?: unknown } };
-        dispute?: { dispute_id?: string; dispute_reason?: string; dispute_amount?: number; cf_payment_id?: string };
+        order?: { order_id?: string; cf_order_id?: string | number };
+        payment?: {
+          cf_payment_id?: number;
+          payment_status?: string;
+          payment_method?: { upi?: unknown; card?: unknown };
+        };
+        dispute?: {
+          dispute_id?: string;
+          dispute_reason?: string;
+          dispute_amount?: number;
+          cf_payment_id?: string;
+        };
       };
     }
     const body = JSON.parse(rawBody.toString("utf8")) as CfPayload;
-    const txnId = body.data?.order?.order_id ?? "";
-    if (!txnId) throw new Error("No order_id in webhook");
+    // Prefer cf_order_id (globally unique, what we store as txnId). Fall back
+    // to merchant order_id for backwards compat with older webhook payloads.
+    const cfOrderId = body.data?.order?.cf_order_id;
+    const txnId = cfOrderId
+      ? String(cfOrderId)
+      : (body.data?.order?.order_id ?? "");
+    if (!txnId) throw new Error("No order_id/cf_order_id in webhook");
 
     if (body.type === "DISPUTE_CREATED") {
       const d = body.data?.dispute;

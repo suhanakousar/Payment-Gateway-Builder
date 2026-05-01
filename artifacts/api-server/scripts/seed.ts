@@ -25,9 +25,16 @@ async function main() {
         businessName: "Sundar Tea Stall",
         pan: "ABCDE1234F",
         bankAccount: "1234567890",
+        bankAccountHolderName: "Sundar Singh",
         ifsc: "HDFC0001234",
-        kycStatus: "VERIFIED",
+        kycStatus: "APPROVED",
         approved: true,
+        // Sandbox vendor — lets the demo merchant create orders without the
+        // real Cashfree onboarding loop. In production this is set by
+        // ensureVendor() after KYC approval.
+        providerMerchantId: "sandbox_v_demo",
+        providerStatus: "ACTIVE",
+        providerVpa: "demo@upi",
       })
       .returning();
     if (!created) throw new Error("Failed to seed demo merchant");
@@ -36,11 +43,18 @@ async function main() {
   } else {
     const [updated] = await db
       .update(merchantsTable)
-      .set({ passwordHash })
+      .set({
+        passwordHash,
+        bankAccountHolderName: "Sundar Singh",
+        providerMerchantId: existing[0]!.providerMerchantId ?? "sandbox_v_demo",
+        providerStatus:
+          existing[0]!.providerStatus === "ACTIVE" ? "ACTIVE" : "ACTIVE",
+        providerVpa: existing[0]!.providerVpa ?? "demo@upi",
+      })
       .where(eq(merchantsTable.email, DEMO_EMAIL))
       .returning();
     merchantId = updated!.id;
-    console.log(`Refreshed demo merchant password for ${DEMO_EMAIL}`);
+    console.log(`Refreshed demo merchant for ${DEMO_EMAIL}`);
   }
 
   const orderCount = await db

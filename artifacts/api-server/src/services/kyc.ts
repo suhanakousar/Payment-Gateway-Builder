@@ -1,6 +1,8 @@
 import * as merchantsRepo from "../repositories/merchants";
 import * as kycRepo from "../repositories/kyc";
 import { OrderError } from "./orders";
+import { ensureVendor } from "./vendor";
+import { logger } from "../utils/logger";
 import type { KycDocument } from "@workspace/db";
 
 const ALLOWED_DOC_TYPES = ["PAN", "AADHAAR", "CHEQUE", "GST", "OTHER"] as const;
@@ -104,6 +106,11 @@ export async function autoApprovePendingKyc(): Promise<number> {
   for (const m of candidates) {
     const docs = await kycRepo.listForMerchant(m.id);
     if (docs.length === 0) continue;
+    if (!m.bankAccount || !m.ifsc || !m.bankAccountHolderName || !m.pan) {
+      // Don't auto-approve until the merchant has provided bank details +
+      // PAN — otherwise vendor registration would fail downstream.
+      continue;
+    }
     await merchantsRepo.updateKycFields(m.id, {
       kycStatus: "APPROVED",
       kycReviewedAt: new Date(),
@@ -111,6 +118,17 @@ export async function autoApprovePendingKyc(): Promise<number> {
       kycRejectionReason: null,
     });
     approved++;
+    // Best-effort: register the merchant as a vendor on the provider so funds
+    // can be routed to their bank. If this fails (network, validation), the
+    // periodic vendor-sync cron retries on the next tick.
+    try {
+      await ensureVendor(m.id);
+    } catch (e) {
+      logger.warn(
+        { err: e, merchantId: m.id },
+        "[kyc] vendor registration failed after auto-approve",
+      );
+    }
   }
   return approved;
 }
