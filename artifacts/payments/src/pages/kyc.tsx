@@ -155,6 +155,7 @@ export default function Kyc() {
   const [docType, setDocType] = useState<string>("PAN");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [uploading, setUploading] = useState(false);
+  const providerFormInitialized = useRef(false);
 
   const form = useForm<Values>({
     resolver: zodResolver(schema),
@@ -179,14 +180,17 @@ export default function Kyc() {
         bankAccount: merchant.bankAccount,
         ifsc: merchant.ifsc,
       });
-      providerForm.reset({
-        preferredProvider: merchant.preferredProvider ?? "cashfree",
-        providerMerchantId: merchant.providerMerchantId ?? "",
-        providerStoreId: merchant.providerStoreId ?? "",
-        providerTerminalId: merchant.providerTerminalId ?? "",
-        providerReference: merchant.providerReference ?? "",
-        providerVpa: merchant.providerVpa ?? "",
-      });
+      if (!providerFormInitialized.current) {
+        providerFormInitialized.current = true;
+        providerForm.reset({
+          preferredProvider: merchant.preferredProvider ?? "cashfree",
+          providerMerchantId: merchant.providerMerchantId ?? "",
+          providerStoreId: merchant.providerStoreId ?? "",
+          providerTerminalId: merchant.providerTerminalId ?? "",
+          providerReference: merchant.providerReference ?? "",
+          providerVpa: merchant.providerVpa ?? "",
+        });
+      }
     }
   }, [merchant, providerForm]);
 
