@@ -26,12 +26,14 @@ import type {
  */
 const APP_ID = process.env["CASHFREE_APP_ID"] ?? "";
 const SECRET = process.env["CASHFREE_SECRET_KEY"] ?? "";
+const LIVE = Boolean(APP_ID && SECRET);
+// For Cashfree API v2023-08-01, webhooks are signed with the same SecretKey.
+// CASHFREE_WEBHOOK_SECRET can override this (e.g. older webhook API versions).
 const WEBHOOK_SECRET =
   process.env["CASHFREE_WEBHOOK_SECRET"] ??
-  SECRET ??
+  (LIVE ? SECRET : null) ??
   process.env["WEBHOOK_SECRET"] ??
   "dev-webhook-secret";
-const LIVE = Boolean(APP_ID && SECRET);
 const CF_BASE =
   process.env["CASHFREE_BASE"] ??
   (LIVE ? "https://api.cashfree.com/pg" : "https://sandbox.cashfree.com/pg");
