@@ -278,7 +278,7 @@ export const cashfreeProvider: PaymentProvider = {
     const res = await cfRequest<CfVendorResponse>("/easy-split/vendors", {
       method: "POST",
       body: JSON.stringify({
-        vendor_id: `paylite_${input.merchantId}`,
+        vendor_id: `pl${input.merchantId.replace(/-/g, "")}`,
         status: "ACTIVE",
         name: input.name,
         email: input.email,
