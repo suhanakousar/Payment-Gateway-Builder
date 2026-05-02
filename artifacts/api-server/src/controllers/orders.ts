@@ -29,6 +29,7 @@ export async function create(req: Request, res: Response): Promise<void> {
       amount: parsed.data.amount,
       customerName: parsed.data.customerName ?? null,
       customerEmail: parsed.data.customerEmail ?? null,
+      customerPhone: parsed.data.customerPhone ?? null,
       note: parsed.data.note ?? null,
     });
     res.status(201).json({ order, qrImage });

@@ -1,0 +1,269 @@
+Upgrade the existing PayLite system into a real multi-merchant UPI payment platform using Cashfree Easy Split, ensuring automatic payment detection and merchant-specific settlement.
+
+DO NOT rebuild the system. Modify the existing architecture.
+
+---
+
+🎯 GOAL
+
+* Multiple merchants
+* Each merchant has their own bank account
+* Each order generates a unique QR
+* Customer pays → money goes to correct merchant
+* System auto-updates (NO manual "mark paid")
+
+---
+
+🧱 KEEP EXISTING SYSTEM (DO NOT CHANGE)
+
+Keep:
+
+* Auth (JWT + CSRF)
+* Merchant onboarding
+* KYC flow
+* Order creation logic
+* Fraud detection
+* Webhook infrastructure (HMAC + dedupe)
+* Reconciliation cron
+* Settlement system
+* Dashboard
+
+---
+
+❌ REMOVE THESE (IMPORTANT)
+
+* Direct UPI QR using merchant VPA (merchant@bank)
+* Manual "Mark Paid" as primary flow (keep only as fallback)
+* checkoutUrl / session-based payments
+* Any redirect-based payment flow
+
+---
+
+🔐 ENVIRONMENT VARIABLES
+
+Add:
+
+CASHFREE_APP_ID=
+CASHFREE_SECRET_KEY=
+CASHFREE_WEBHOOK_SECRET=
+CASHFREE_BASE=https://sandbox.cashfree.com/pg (or production)
+DEFAULT_PROVIDER=cashfree
+
+---
+
+🏦 STEP 1: CREATE VENDOR (SUB-MERCHANT)
+
+On KYC approval, call Cashfree:
+
+POST /pg/easy-split/vendors
+
+Body:
+{
+"vendor_id": "<merchant_id>",
+"name": "<merchant_name>",
+"email": "<merchant_email>",
+"phone": "<merchant_phone>",
+"bank": {
+"account_number": "<bank_account>",
+"ifsc": "<ifsc>",
+"account_holder": "<holder_name>"
+}
+}
+
+Store in DB:
+
+* merchants.provider_merchant_id = vendor_id
+* merchants.provider_status = PENDING
+
+---
+
+🔄 STEP 2: VENDOR STATUS SYNC (CRON)
+
+Every 2 minutes:
+
+GET /pg/easy-split/vendors/{vendor_id}
+
+If status == ACTIVE:
+merchants.provider_status = ACTIVE
+
+If status == REJECTED:
+merchants.provider_status = REJECTED
+
+---
+
+⛔ STEP 3: BLOCK ORDER IF NOT ACTIVE
+
+Before creating order:
+
+IF provider_status != ACTIVE:
+return HTTP 412 "Merchant not ready for payments"
+
+---
+
+💳 STEP 4: CREATE ORDER WITH SPLIT
+
+Modify providers/cashfree.ts:
+
+POST /pg/orders
+
+Body:
+{
+"order_id": "<orderId>",
+"order_amount": <amount>,
+"order_currency": "INR",
+"customer_details": {
+"customer_id": "<id>",
+"customer_phone": "9999999999"
+},
+"order_splits": [
+{
+"vendor_id": "<merchant.provider_merchant_id>",
+"percentage": 100
+}
+]
+}
+
+Store:
+orders.txn_id = cf_order_id
+
+---
+
+📱 STEP 5: GENERATE UPI QR
+
+POST /pg/orders/pay
+
+Body:
+{
+"order_id": "<orderId>",
+"payment_method": {
+"upi": {
+"channel": "qrcode"
+}
+}
+}
+
+Response:
+
+* upi_intent or payment_link
+
+Generate QR:
+qrImage = generateQRCode(upi_intent)
+
+Return to frontend:
+{
+qrImage,
+txnId
+}
+
+---
+
+🖥️ STEP 6: FRONTEND (/payment/:orderId)
+
+Display:
+
+* QR (center)
+* amount
+* merchant name
+* order ID
+* countdown (10–15 min)
+* "Waiting for payment..."
+
+REMOVE:
+
+* Pay Securely button
+* Redirect flows
+
+---
+
+🔔 STEP 7: WEBHOOK (CRITICAL)
+
+POST /api/webhook?provider=cashfree
+
+1. Read RAW body
+2. Verify signature using CASHFREE_WEBHOOK_SECRET
+3. Parse payload
+
+Example:
+{
+"cf_order_id": "...",
+"order_status": "PAID"
+}
+
+4. Idempotency:
+   Insert into webhook_events (unique cf_order_id + status)
+
+5. Update DB:
+   WHERE orders.txn_id = cf_order_id
+
+IF order_status == "PAID":
+status = SUCCESS
+
+IF FAILED:
+status = FAILED
+
+---
+
+🔁 STEP 8: KEEP RECONCILIATION
+
+Use existing cron:
+
+* fetchPaymentStatus(txnId)
+* fix missed webhook updates
+
+---
+
+💰 STEP 9: MONEY FLOW
+
+Customer → Cashfree → Merchant Bank
+
+You DO NOT hold money
+
+---
+
+🧪 STEP 10: TEST TODAY
+
+1. Deploy backend (public URL OR ngrok)
+2. Set webhook URL in Cashfree dashboard
+3. Create merchant → complete KYC
+4. Wait until vendor ACTIVE
+5. Create order
+6. Open /payment/:orderId
+7. Scan QR and pay ₹1
+8. Check logs:
+   "WEBHOOK RECEIVED"
+9. Verify:
+
+   * Order auto → SUCCESS
+   * Dashboard updates
+
+---
+
+🚀 FINAL RESULT
+
+Merchant A → QR → Payment → Bank A
+Merchant B → QR → Payment → Bank B
+
+System auto updates via webhook
+No manual intervention
+Real payments, real tracking
+
+---
+
+⚠️ IMPORTANT RULES
+
+* No direct UPI QR (merchant@bank)
+* No session-based checkout
+* Webhook must be publicly accessible
+* Vendor must be ACTIVE before orders
+
+---
+
+END RESULT:
+
+Production-ready payment system like Razorpay/Cashfree dashboards with:
+
+* multi-merchant support
+* automatic payment tracking
+* real bank settlements
+
+---

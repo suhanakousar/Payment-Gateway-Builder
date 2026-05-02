@@ -275,6 +275,7 @@ export const CreateOrderBody = zod.object({
   amount: zod.number().min(1),
   customerName: zod.string().optional(),
   customerEmail: zod.string().optional(),
+  customerPhone: zod.string().optional(),
   note: zod.string().optional(),
 });
 

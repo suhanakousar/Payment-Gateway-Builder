@@ -74,3 +74,9 @@ externalPort = 3000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+CASHFREE_BASE = "https://sandbox.cashfree.com/pg"
+DEFAULT_PROVIDER = "cashfree"

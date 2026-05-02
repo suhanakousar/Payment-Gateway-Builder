@@ -81,6 +81,7 @@ const newOrderSchema = z.object({
   amount: z.coerce.number().positive("Must be > 0").max(1_000_000),
   customerName: z.string().max(120).optional().or(z.literal("")),
   customerEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  customerPhone: z.string().max(15).optional().or(z.literal("")),
   note: z.string().max(280).optional().or(z.literal("")),
 });
 
@@ -102,6 +103,7 @@ function NewOrderDialog({
       amount: 100,
       customerName: "",
       customerEmail: "",
+      customerPhone: "",
       note: "",
     },
   });
@@ -115,6 +117,7 @@ function NewOrderDialog({
           amount: values.amount,
           customerName: values.customerName || undefined,
           customerEmail: values.customerEmail || undefined,
+          customerPhone: values.customerPhone || undefined,
           note: values.note || undefined,
         },
       }),
@@ -128,6 +131,7 @@ function NewOrderDialog({
         amount: 100,
         customerName: "",
         customerEmail: "",
+        customerPhone: "",
         note: "",
       });
     },
@@ -192,16 +196,27 @@ function NewOrderDialog({
               />
               <FormField
                 control={form.control}
-                name="customerEmail"
+                name="customerPhone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Customer email</FormLabel>
-                    <FormControl><Input type="email" {...field} /></FormControl>
+                    <FormLabel>Phone</FormLabel>
+                    <FormControl><Input type="tel" placeholder="10-digit" {...field} /></FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="customerEmail"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Customer email</FormLabel>
+                  <FormControl><Input type="email" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name="note"
@@ -303,6 +318,7 @@ function SimulateButton({ order }: { order: OrderRow }) {
     },
   });
 
+  if (!import.meta.env.DEV) return null;
   if (order.status !== "PENDING" || !order.txnId) return null;
 
   return (

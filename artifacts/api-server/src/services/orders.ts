@@ -95,6 +95,7 @@ export async function createOrder(input: {
   amount: number;
   customerName?: string | null;
   customerEmail?: string | null;
+  customerPhone?: string | null;
   note?: string | null;
   preferredProvider?: string | null;
 }): Promise<{ order: OrderPublic; qrImage: string | null }> {
@@ -130,6 +131,7 @@ export async function createOrder(input: {
     businessName: merchant.businessName,
     customerName: input.customerName ?? null,
     customerEmail: input.customerEmail ?? null,
+    customerPhone: input.customerPhone ?? null,
     merchantConfig: {
       merchantId: merchant.id,
       providerMerchantId: decryptString(merchant.providerMerchantId),
