@@ -43,9 +43,6 @@ const providerSchema = z.object({
   providerTerminalId: z.string().max(120).optional().or(z.literal("")),
   providerReference: z.string().max(120).optional().or(z.literal("")),
   providerVpa: z.string().max(120).optional().or(z.literal("")),
-  decentroClientId: z.string().max(120).optional().or(z.literal("")),
-  decentroClientSecret: z.string().max(180).optional().or(z.literal("")),
-  decentroModuleSecret: z.string().max(180).optional().or(z.literal("")),
 });
 
 type Values = z.infer<typeof schema>;
@@ -106,9 +103,6 @@ export default function KycPage() {
       providerTerminalId: merchant?.providerTerminalId ?? "",
       providerReference: merchant?.providerReference ?? "",
       providerVpa: merchant?.providerVpa ?? "",
-      decentroClientId: "",
-      decentroClientSecret: "",
-      decentroModuleSecret: "",
     },
   });
 
@@ -128,9 +122,6 @@ export default function KycPage() {
           providerTerminalId: merchant.providerTerminalId ?? "",
           providerReference: merchant.providerReference ?? "",
           providerVpa: merchant.providerVpa ?? "",
-          decentroClientId: "",
-          decentroClientSecret: "",
-          decentroModuleSecret: "",
         });
       }
     }
@@ -183,9 +174,6 @@ export default function KycPage() {
           providerTerminalId: values.providerTerminalId || undefined,
           providerReference: values.providerReference || undefined,
           providerVpa: values.providerVpa || undefined,
-          decentroClientId: values.decentroClientId || undefined,
-          decentroClientSecret: values.decentroClientSecret || undefined,
-          decentroModuleSecret: values.decentroModuleSecret || undefined,
         },
       }),
     onSuccess: async () => {
@@ -344,14 +332,6 @@ export default function KycPage() {
                   </FormItem>
                 )}
               />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <FormField control={providerForm.control} name="decentroClientId" render={({ field }) => (<FormItem><FormLabel>Decentro Client ID</FormLabel><FormControl><Input className="font-mono" placeholder="Client ID" {...field} /></FormControl><FormMessage /></FormItem>)} />
-              <FormField control={providerForm.control} name="decentroClientSecret" render={({ field }) => (<FormItem><FormLabel>Decentro Client Secret</FormLabel><FormControl><Input className="font-mono" placeholder="Client Secret" {...field} /></FormControl><FormMessage /></FormItem>)} />
-              <FormField control={providerForm.control} name="decentroModuleSecret" render={({ field }) => (<FormItem><FormLabel>Decentro Module Secret</FormLabel><FormControl><Input className="font-mono" placeholder="Module Secret" {...field} /></FormControl><FormMessage /></FormItem>)} />
-            </div>
-            <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-              If this field is empty, PayLite will block QR generation for the merchant.
             </div>
             <Button type="submit" disabled={providerMut.isPending}>
               {providerMut.isPending ? "Saving…" : "Save provider mapping"}
