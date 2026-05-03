@@ -238,7 +238,7 @@ function NewOrderDialog({
               </Button>
               <Button
                 type="submit"
-                disabled={mutation.isPending || !merchant?.providerVpa}
+                disabled={mutation.isPending}
               >
                 {mutation.isPending ? "Creating…" : "Create order"}
               </Button>

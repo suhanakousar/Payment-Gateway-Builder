@@ -207,7 +207,7 @@ export const decentroProvider: PaymentProvider = {
     }
 
     // Sandbox stub — builds a local UPI intent for visual fidelity.
-    const sandboxVpa = payeeAccount || "paylite@decentro";
+    const sandboxVpa = input.merchantConfig?.providerVpa || payeeAccount || "paylite@decentro";
     const txnId = `dc_${crypto.randomBytes(8).toString("hex")}`;
     const qrString = buildUpiIntent({
       vpa: sandboxVpa,

@@ -102,13 +102,14 @@ export async function saveProviderConfig(
     providerStatus?: string;
   },
 ): Promise<MerchantPublic | null> {
+  const normalizedVpa = input.providerVpa?.trim().toLowerCase() || null;
   const updated = await merchantsRepo.updateProviderFields(id, {
     preferredProvider: input.preferredProvider,
     providerMerchantId: encryptString(input.providerMerchantId?.trim() || null),
     providerStoreId: encryptString(input.providerStoreId?.trim() || null),
     providerTerminalId: encryptString(input.providerTerminalId?.trim() || null),
     providerReference: encryptString(input.providerReference?.trim() || null),
-    providerVpa: encryptString(input.providerVpa?.trim().toLowerCase() || null),
+    providerVpa: encryptString(normalizedVpa),
     providerStatus: input.providerStatus ?? "ACTIVE",
   });
   return updated ? toPublic(updated) : null;
