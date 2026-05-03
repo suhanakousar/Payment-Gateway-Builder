@@ -1,0 +1,269 @@
+Alright — no theory, no confusion.
+Here is **exactly what you must do step-by-step to fix your system TODAY** 👇
+
+---
+
+# 🚨 FIRST — IMPORTANT TRUTH
+
+👉 Your current failure is because:
+
+```plaintext
+QR → uses random / direct UPI ❌
+Decentro → does NOT recognize payee ❌
+UPI app → rejects → “technical glitch”
+```
+
+---
+
+# ✅ YOUR GOAL
+
+```plaintext
+Merchant → registered in Decentro
+Order → uses that merchant (payee_id)
+QR → valid → payment SUCCESS
+Webhook → updates dashboard
+```
+
+---
+
+# 🚀 EXACT STEPS TO FIX (FOLLOW STRICTLY)
+
+---
+
+# 🧩 STEP 1: SWITCH TO REAL MODE
+
+In your Decentro dashboard (your screenshot):
+
+👉 Top right:
+
+```plaintext
+Sample → OFF
+Actual → ON ✅
+```
+
+---
+
+# 🧩 STEP 2: CONFIRM LIVE ACCESS
+
+👉 You MUST confirm with Decentro:
+
+* UPI Collect / QR enabled
+* Live payments enabled
+
+👉 If not enabled → STOP
+Nothing will work.
+
+---
+
+# 🧩 STEP 3: CREATE PAYEE (VERY IMPORTANT)
+
+👉 You are currently missing this
+
+Call Decentro API:
+
+```bash
+POST https://api.decentro.tech/core_banking/add_beneficiary
+```
+
+Body:
+
+```json
+{
+  "beneficiary_name": "Merchant A",
+  "beneficiary_account_number": "1234567890",
+  "beneficiary_ifsc": "HDFC0001234",
+  "beneficiary_type": "vendor"
+}
+```
+
+👉 OR if UPI:
+
+```json
+{
+  "beneficiary_name": "Merchant A",
+  "beneficiary_vpa": "merchant@upi"
+}
+```
+
+---
+
+## ✅ RESPONSE
+
+You will get:
+
+```json
+{
+  "beneficiary_id": "BEN123456"
+}
+```
+
+---
+
+# 🧠 SAVE THIS
+
+```plaintext
+merchant.providerMerchantId = BEN123456
+```
+
+---
+
+# 🧩 STEP 4: MODIFY YOUR ORDER API
+
+When creating QR / payment:
+
+👉 DO NOT DO THIS:
+
+```plaintext
+upi://pay?pa=merchant@upi ❌
+```
+
+---
+
+👉 DO THIS:
+
+Pass:
+
+```json
+{
+  "beneficiary_id": "BEN123456",
+  "amount": 1,
+  "reference_id": "ORDER123"
+}
+```
+
+---
+
+# 🧩 STEP 5: GENERATE QR FROM DECENTRO
+
+Call:
+
+```bash
+POST https://api.decentro.tech/payments/upi/collect
+```
+
+Body:
+
+```json
+{
+  "beneficiary_id": "BEN123456",
+  "amount": "1",
+  "reference_id": "ORDER123",
+  "purpose_message": "Payment"
+}
+```
+
+---
+
+## ✅ RESPONSE
+
+```json
+{
+  "upi_intent": "upi://pay?pa=xyz@bank..."
+}
+```
+
+---
+
+👉 Now generate QR:
+
+```js
+qr = generateQR(response.upi_intent)
+```
+
+---
+
+# 🧩 STEP 6: SHOW QR (FRONTEND)
+
+Display:
+
+* QR
+* amount
+* merchant name
+
+---
+
+# 🧩 STEP 7: TEST MANUALLY (VERY IMPORTANT)
+
+👉 Copy UPI:
+
+```plaintext
+xyz@bank
+```
+
+👉 Send ₹1 from GPay
+
+---
+
+### RESULT:
+
+| Result  | Meaning         |
+| ------- | --------------- |
+| Success | ✔ correct setup |
+| Failed  | ❌ payee wrong   |
+
+---
+
+# 🧩 STEP 8: ADD WEBHOOK
+
+Set:
+
+```plaintext
+https://your-domain/api/webhook/decentro
+```
+
+---
+
+### In backend:
+
+```js
+if (data.status === "SUCCESS") {
+  updateOrder(data.reference_id, "SUCCESS");
+}
+```
+
+---
+
+# ❌ REMOVE THIS FROM YOUR SYSTEM
+
+* direct UPI fallback
+* generic QR builder
+* merchant@upi manual usage
+
+---
+
+# 🔥 FINAL FLOW (CORRECT)
+
+```plaintext
+Merchant signup
+→ Create beneficiary (Decentro)
+
+Create order
+→ Use beneficiary_id
+
+Generate QR
+→ Show to user
+
+User pays
+→ Decentro processes
+
+Webhook
+→ update DB
+
+Dashboard updates automatically
+```
+
+---
+
+# 💬 SIMPLE MESSAGE YOU CAN SEND
+
+We need to create a beneficiary for each merchant in Decentro and use that beneficiary_id while generating the QR.
+
+Right now we are using raw UPI, which is why payments are failing. Once we switch to beneficiary-based flow, payments will work correctly.
+
+---
+
+
+
+
+
+
