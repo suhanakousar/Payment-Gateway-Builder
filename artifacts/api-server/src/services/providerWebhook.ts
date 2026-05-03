@@ -16,18 +16,18 @@ export class WebhookError extends Error {
 export interface ProviderWebhookInput {
   rawBody: Buffer;
   headers: Record<string, string | undefined>;
-  /** ?provider=razorpay — selects which adapter parses the payload. Defaults to "mock". */
+  /** ?provider=decentro — selects which adapter parses the payload. Defaults to DEFAULT_PROVIDER. */
   providerName: string;
 }
 
-const DISPUTE_DEADLINE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DISPUTE_DEADLINE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export async function processProviderWebhook(
   input: ProviderWebhookInput,
 ): Promise<{ ok: true; deduped: boolean; provider: string }> {
   const provider =
     providerRouter.get(input.providerName) ??
-    getProvider(process.env["DEFAULT_PROVIDER"] ?? "cashfree");
+    getProvider(process.env["DEFAULT_PROVIDER"] ?? "decentro");
 
   let parsed;
   try {
@@ -52,7 +52,6 @@ export async function processProviderWebhook(
     return { ok: true, deduped: false, provider: provider.name };
   }
 
-  // Dispute path — order should already be SUCCESS
   if (parsed.dispute) {
     if (order.status !== "SUCCESS") {
       return { ok: true, deduped: false, provider: provider.name };

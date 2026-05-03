@@ -43,5 +43,6 @@ function shutdown(signal: string): void {
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 5_000).unref();
 }
-process.on("SIGTERM", () => shutdown("SIGTERM"));
+
 process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));

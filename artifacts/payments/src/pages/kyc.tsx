@@ -30,25 +30,10 @@ import {
 } from "@/components/ui/form";
 
 const schema = z.object({
-  pan: z
-    .string()
-    .min(5, "PAN looks too short")
-    .max(20, "PAN looks too long")
-    .regex(/^[A-Z0-9]+$/i, "Use letters and digits only"),
-  bankAccount: z
-    .string()
-    .min(6, "Account number too short")
-    .max(20, "Account number too long")
-    .regex(/^\d+$/, "Digits only"),
-  bankAccountHolderName: z
-    .string()
-    .min(2, "Holder name required")
-    .max(120, "Holder name too long"),
-  ifsc: z
-    .string()
-    .min(6, "IFSC too short")
-    .max(15, "IFSC too long")
-    .regex(/^[A-Z0-9]+$/i, "Use letters and digits only"),
+  pan: z.string().min(5, "PAN looks too short").max(20, "PAN looks too long").regex(/^[A-Z0-9]+$/i, "Use letters and digits only"),
+  bankAccount: z.string().min(6, "Account number too short").max(20, "Account number too long").regex(/^\d+$/, "Digits only"),
+  bankAccountHolderName: z.string().min(2, "Holder name required").max(120, "Holder name too long"),
+  ifsc: z.string().min(6, "IFSC too short").max(15, "IFSC too long").regex(/^[A-Z0-9]+$/i, "Use letters and digits only"),
 });
 
 const providerSchema = z.object({
@@ -81,73 +66,21 @@ const DOC_TYPES = [
   { value: "AADHAAR", label: "Aadhaar" },
   { value: "CHEQUE", label: "Cancelled cheque" },
   { value: "GST", label: "GST certificate" },
-  { value: "OTHER", label: "Other" },
 ] as const;
 
-const STEPS = [
-  { key: "details", label: "Business details" },
-  { key: "documents", label: "Upload documents" },
-  { key: "review", label: "Review & submit" },
-] as const;
-
-const STATUS_BLOCK: Record<
-  string,
-  { tone: string; icon: typeof Check; title: string; body: string }
-> = {
-  NOT_STARTED: {
-    tone: "border-neutral-200 bg-neutral-50 text-neutral-700",
-    icon: AlertCircle,
-    title: "Get verified to start accepting larger payments",
-    body: "Complete the 3 steps below. We approve standard cases within minutes.",
-  },
-  SUBMITTED: {
-    tone: "border-amber-200 bg-amber-50 text-amber-800",
-    icon: Clock,
-    title: "Submitted — waiting for review",
-    body: "In this demo build, merchants are auto-approved shortly after valid documents are uploaded.",
-  },
-  UNDER_REVIEW: {
-    tone: "border-amber-200 bg-amber-50 text-amber-800",
-    icon: Clock,
-    title: "Under review by compliance",
-    body: "No action needed from your side right now.",
-  },
-  APPROVED: {
-    tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    icon: Check,
-    title: "KYC approved",
-    body: "You can accept payments of any amount and receive daily payouts.",
-  },
-  VERIFIED: {
-    tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
-    icon: Check,
-    title: "Verified",
-    body: "You're all set.",
-  },
-  REJECTED: {
-    tone: "border-rose-200 bg-rose-50 text-rose-800",
-    icon: AlertCircle,
-    title: "KYC was rejected",
-    body: "Please correct the issue noted below and resubmit.",
-  },
-};
-
-function formatBytes(b: number) {
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
-  return `${(b / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-async function fileToDataUri(file: File): Promise<string> {
+function fileToDataUri(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("Failed to read file"));
+    };
+    reader.onerror = () => reject(new Error("Failed to read file"));
     reader.readAsDataURL(file);
   });
 }
 
-export default function Kyc() {
+export default function KycPage() {
   const { merchant, refresh } = useAuth();
   const qc = useQueryClient();
   const [previousMasked, setPreviousMasked] = useState<{
@@ -167,7 +100,7 @@ export default function Kyc() {
   const providerForm = useForm<ProviderValues>({
     resolver: zodResolver(providerSchema),
     defaultValues: {
-      preferredProvider: merchant?.preferredProvider ?? "cashfree",
+      preferredProvider: merchant?.preferredProvider ?? "decentro",
       providerMerchantId: merchant?.providerMerchantId ?? "",
       providerStoreId: merchant?.providerStoreId ?? "",
       providerTerminalId: merchant?.providerTerminalId ?? "",
@@ -189,7 +122,7 @@ export default function Kyc() {
       if (!providerFormInitialized.current) {
         providerFormInitialized.current = true;
         providerForm.reset({
-          preferredProvider: merchant.preferredProvider ?? "cashfree",
+          preferredProvider: merchant.preferredProvider ?? "decentro",
           providerMerchantId: merchant.providerMerchantId ?? "",
           providerStoreId: merchant.providerStoreId ?? "",
           providerTerminalId: merchant.providerTerminalId ?? "",
@@ -212,7 +145,6 @@ export default function Kyc() {
     },
   });
 
-  // Auto-refresh merchant when KYC is being processed.
   useEffect(() => {
     const status = merchant?.kycStatus;
     if (status !== "SUBMITTED" && status !== "UNDER_REVIEW") return;
@@ -239,6 +171,7 @@ export default function Kyc() {
       qc.invalidateQueries({ queryKey: ["kyc", "docs"] });
     },
   });
+
   const providerMut = useMutation({
     mutationFn: (values: ProviderValues) =>
       api<{ merchant: unknown }>("/merchant/provider-config", {
@@ -280,251 +213,38 @@ export default function Kyc() {
       toast.error(e instanceof ApiError ? e.message : "Upload failed");
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
-  const status = merchant?.kycStatus ?? "NOT_STARTED";
-  const meta = STATUS_BLOCK[status] ?? STATUS_BLOCK.NOT_STARTED;
-  const StatusIcon = meta.icon;
-  const docs = docsQ.data ?? [];
-  const hasDetails = !!previousMasked?.pan;
-  const hasDocs = docs.length > 0;
-  const isComplete = status === "APPROVED" || status === "VERIFIED";
+  if (!merchant) return null;
 
-  const stepStates: Array<"complete" | "active" | "pending"> = [
-    hasDetails ? "complete" : "active",
-    hasDetails ? (hasDocs ? "complete" : "active") : "pending",
-    isComplete ? "complete" : hasDetails && hasDocs ? "active" : "pending",
-  ];
+  const isComplete = merchant.kycStatus === "APPROVED" || merchant.kycStatus === "VERIFIED";
+  const hasDetails = Boolean(previousMasked?.pan || previousMasked?.bankAccount || previousMasked?.ifsc);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">KYC & bank</h1>
-        <p className="text-sm text-neutral-500 mt-1">
-          We need this to settle payouts and stay compliant with RBI rules.
-        </p>
-      </div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        className={`border rounded-xl p-5 flex items-start gap-3 ${meta.tone}`}
-      >
-        <StatusIcon size={18} className="shrink-0 mt-0.5" />
-        <div>
-          <div className="text-sm font-medium">{meta.title}</div>
-          <div className="text-xs mt-0.5 opacity-80">{meta.body}</div>
-          {merchant?.kycRejectionReason && status === "REJECTED" && (
-            <div className="text-xs mt-2 font-medium">
-              Reason: {merchant.kycRejectionReason}
-            </div>
-          )}
-        </div>
-      </motion.div>
-
-      {(isComplete && merchant?.providerStatus !== "ACTIVE") && (
-        <motion.div
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="border rounded-xl p-5 flex items-start gap-3 border-amber-200 bg-amber-50 text-amber-900"
-        >
-          <Clock size={18} className="shrink-0 mt-0.5" />
-          <div>
-            <div className="text-sm font-medium">
-              Payment provider activation in progress
-            </div>
-            <div className="text-xs mt-0.5 opacity-80">
-              Your payment provider account is being activated
-              {merchant?.providerStatus
-                ? ` (status: ${merchant.providerStatus})`
-                : ""}
-              . You can't create live orders until this completes — usually a few minutes.
-            </div>
-          </div>
-        </motion.div>
-      )}
-      {isComplete && merchant?.providerStatus === "ACTIVE" && (
-        <motion.div
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="border rounded-xl p-5 flex items-start gap-3 border-emerald-200 bg-emerald-50 text-emerald-900"
-        >
-          <Check size={18} className="shrink-0 mt-0.5" />
-          <div>
-            <div className="text-sm font-medium">
-              Provider vendor active — ready to accept payments
-            </div>
-            <div className="text-xs mt-0.5 opacity-80">
-              Funds collected via your QRs will settle to{" "}
-              <span className="font-mono">
-                {merchant.bankAccount ?? "your linked bank"}
-              </span>{" "}
-              ({merchant.ifsc ?? ""}) on T+1.
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Stepper */}
-      <div className="flex items-center justify-between gap-2">
-        {STEPS.map((s, i) => {
-          const state = stepStates[i];
-          return (
-            <div key={s.key} className="flex-1 flex items-center gap-2">
-              <div
-                className={`h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold ${
-                  state === "complete"
-                    ? "bg-emerald-600 text-white"
-                    : state === "active"
-                      ? "bg-neutral-900 text-white"
-                      : "bg-neutral-200 text-neutral-500"
-                }`}
-              >
-                {state === "complete" ? <Check size={14} /> : i + 1}
-              </div>
-              <span
-                className={`text-xs font-medium ${
-                  state === "pending" ? "text-neutral-400" : "text-neutral-900"
-                }`}
-              >
-                {s.label}
-              </span>
-              {i < STEPS.length - 1 && (
-                <div
-                  className={`flex-1 h-px ${
-                    stepStates[i] === "complete" ? "bg-emerald-300" : "bg-neutral-200"
-                  }`}
-                />
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Step 1: details */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="border border-neutral-200 bg-white rounded-xl p-5"
-      >
+    <div className="space-y-6">
+      <motion.div className="border border-neutral-200 bg-white rounded-xl p-5">
         <div className="flex items-center gap-2 mb-1">
           <Lock size={14} className="text-neutral-500" />
-          <h2 className="text-sm font-medium">Step 1 — Business details</h2>
+          <h2 className="text-sm font-medium">KYC & bank</h2>
         </div>
         <p className="text-xs text-neutral-500 mb-4">
-          Encrypted with AES-256-GCM at rest. Only the last 4 chars are ever shown again.
+          We need this to settle payouts and stay compliant with RBI rules.
         </p>
-
-        {hasDetails && (
-          <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm mb-4 p-3 rounded-md bg-neutral-50">
+        {isComplete && merchant.providerStatus !== "ACTIVE" && (
+          <div className="border rounded-xl p-5 flex items-start gap-3 border-amber-200 bg-amber-50 text-amber-900">
+            <Clock size={18} className="shrink-0 mt-0.5" />
             <div>
-              <dt className="text-xs uppercase tracking-wide text-neutral-500">PAN</dt>
-              <dd className="font-mono mt-0.5">{previousMasked?.pan ?? "—"}</dd>
+              <div className="text-sm font-medium">Payment provider activation in progress</div>
+              <div className="text-xs mt-0.5 opacity-80">
+                Your payment provider account is being activated{merchant.providerStatus ? ` (status: ${merchant.providerStatus})` : ""}. You can't create live orders until this completes — usually a few minutes.
+              </div>
             </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-neutral-500">Account</dt>
-              <dd className="font-mono mt-0.5">{previousMasked?.bankAccount ?? "—"}</dd>
-            </div>
-            <div>
-              <dt className="text-xs uppercase tracking-wide text-neutral-500">IFSC</dt>
-              <dd className="font-mono mt-0.5">{previousMasked?.ifsc ?? "—"}</dd>
-            </div>
-          </dl>
+          </div>
         )}
-
-        <Form {...form}>
-          <form
-            onSubmit={form.handleSubmit((v) => saveMut.mutate(v))}
-            className="space-y-4"
-          >
-            <FormField
-              control={form.control}
-              name="pan"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>PAN</FormLabel>
-                  <FormControl>
-                    <Input
-                      className="font-mono uppercase"
-                      placeholder="ABCDE1234F"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormDescription className="text-xs">
-                    10-character permanent account number.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="bankAccountHolderName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Account holder name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Name as on bank passbook" {...field} />
-                  </FormControl>
-                  <FormDescription className="text-xs">
-                    Must exactly match the name on your bank account — used by the provider to verify and route settlements.
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <FormField
-                control={form.control}
-                name="bankAccount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Bank account</FormLabel>
-                    <FormControl>
-                      <Input
-                        className="font-mono"
-                        placeholder="1234567890"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="ifsc"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>IFSC</FormLabel>
-                    <FormControl>
-                      <Input
-                        className="font-mono uppercase"
-                        placeholder="HDFC0001234"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            <Button type="submit" disabled={saveMut.isPending}>
-              <ShieldCheck size={14} className="mr-1.5" />
-              {saveMut.isPending ? "Saving…" : hasDetails ? "Update details" : "Save details"}
-            </Button>
-          </form>
-        </Form>
       </motion.div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.02 }}
-        className="border border-neutral-200 bg-white rounded-xl p-5"
-      >
+      <motion.div className="border border-neutral-200 bg-white rounded-xl p-5">
         <div className="flex items-center gap-2 mb-1">
           <ShieldCheck size={14} className="text-neutral-500" />
           <h2 className="text-sm font-medium">Provider mapping & receiving UPI</h2>
@@ -534,10 +254,7 @@ export default function Kyc() {
         </p>
 
         <Form {...providerForm}>
-          <form
-            onSubmit={providerForm.handleSubmit((v) => providerMut.mutate(v))}
-            className="space-y-4"
-          >
+          <form onSubmit={providerForm.handleSubmit((v) => providerMut.mutate(v))} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField
                 control={providerForm.control}
@@ -546,10 +263,10 @@ export default function Kyc() {
                   <FormItem>
                     <FormLabel>Provider</FormLabel>
                     <FormControl>
-                      <Input placeholder="cashfree" {...field} />
+                      <Input placeholder="decentro" {...field} />
                     </FormControl>
                     <FormDescription className="text-xs">
-                      Example: `cashfree`, `razorpay`, `decentro`, `pinelabs`
+                      Example: `decentro`, `cashfree`, `razorpay`, `pinelabs`
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
@@ -629,45 +346,9 @@ export default function Kyc() {
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <FormField
-                control={providerForm.control}
-                name="decentroClientId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Decentro Client ID</FormLabel>
-                    <FormControl>
-                      <Input className="font-mono" placeholder="Client ID" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={providerForm.control}
-                name="decentroClientSecret"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Decentro Client Secret</FormLabel>
-                    <FormControl>
-                      <Input className="font-mono" placeholder="Client Secret" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={providerForm.control}
-                name="decentroModuleSecret"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Decentro Module Secret</FormLabel>
-                    <FormControl>
-                      <Input className="font-mono" placeholder="Module Secret" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <FormField control={providerForm.control} name="decentroClientId" render={({ field }) => (<FormItem><FormLabel>Decentro Client ID</FormLabel><FormControl><Input className="font-mono" placeholder="Client ID" {...field} /></FormControl><FormMessage /></FormItem>)} />
+              <FormField control={providerForm.control} name="decentroClientSecret" render={({ field }) => (<FormItem><FormLabel>Decentro Client Secret</FormLabel><FormControl><Input className="font-mono" placeholder="Client Secret" {...field} /></FormControl><FormMessage /></FormItem>)} />
+              <FormField control={providerForm.control} name="decentroModuleSecret" render={({ field }) => (<FormItem><FormLabel>Decentro Module Secret</FormLabel><FormControl><Input className="font-mono" placeholder="Module Secret" {...field} /></FormControl><FormMessage /></FormItem>)} />
             </div>
             <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
               If this field is empty, PayLite will block QR generation for the merchant.
@@ -679,115 +360,12 @@ export default function Kyc() {
         </Form>
       </motion.div>
 
-      {/* Step 2: documents */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.05 }}
-        className="border border-neutral-200 bg-white rounded-xl p-5"
-      >
+      <motion.div className="border border-neutral-200 bg-white rounded-xl p-5">
         <div className="flex items-center gap-2 mb-1">
           <Upload size={14} className="text-neutral-500" />
           <h2 className="text-sm font-medium">Step 2 — Upload supporting documents</h2>
         </div>
-        <p className="text-xs text-neutral-500 mb-4">
-          PAN card and a cancelled cheque are required. PDF, JPG or PNG up to 2 MB each. After upload, this demo auto-approves KYC in a few seconds.
-        </p>
-
-        <div className="flex gap-2 flex-wrap items-end mb-4">
-          <div>
-            <label className="text-xs text-neutral-500">Document type</label>
-            <select
-              value={docType}
-              onChange={(e) => setDocType(e.target.value)}
-              className="block mt-1 h-9 px-2 text-sm border border-neutral-200 rounded-md bg-white"
-            >
-              {DOC_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,application/pdf"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void handleFile(f);
-            }}
-            className="hidden"
-          />
-          <Button
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-          >
-            <Upload size={14} className="mr-1.5" />
-            {uploading ? "Uploading…" : "Choose file"}
-          </Button>
-        </div>
-
-        {docs.length === 0 ? (
-          <div className="text-sm text-neutral-500 text-center py-6 border border-dashed rounded-md">
-            No documents uploaded yet.
-          </div>
-        ) : (
-          <ul className="space-y-2">
-            {docs.map((d) => (
-              <li
-                key={d.id}
-                className="flex items-center justify-between gap-3 border border-neutral-200 rounded-md px-3 py-2 text-sm"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileText size={16} className="text-neutral-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-medium truncate">{d.filename}</div>
-                    <div className="text-xs text-neutral-500">
-                      {DOC_TYPES.find((t) => t.value === d.docType)?.label ?? d.docType}{" "}
-                      · {formatBytes(d.sizeBytes)} · uploaded{" "}
-                      {new Date(d.createdAt).toLocaleString("en-IN", {
-                        dateStyle: "short",
-                        timeStyle: "short",
-                      })}
-                    </div>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => deleteDocMut.mutate(d.id)}
-                  disabled={status === "APPROVED" || status === "VERIFIED"}
-                >
-                  <Trash2 size={14} className="text-rose-500" />
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </motion.div>
-
-      {/* Step 3: review */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="border border-neutral-200 bg-white rounded-xl p-5"
-      >
-        <div className="flex items-center gap-2 mb-1">
-          <ShieldCheck size={14} className="text-neutral-500" />
-          <h2 className="text-sm font-medium">Step 3 — Review</h2>
-        </div>
-        <p className="text-xs text-neutral-500">
-          {!hasDetails
-            ? "Complete step 1 first."
-            : !hasDocs
-              ? "Upload at least one document in step 2."
-              : isComplete
-                ? "All done — your account is fully verified."
-                : "Documents are uploaded. This demo will update the status automatically shortly."}
-        </p>
+        <div className="text-xs text-neutral-500 mb-4">Upload PAN, cheque and other supporting KYC documents.</div>
       </motion.div>
     </div>
   );
