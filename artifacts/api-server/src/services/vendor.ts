@@ -32,9 +32,13 @@ function requireKycFields(m: Merchant): {
 }
 
 /**
- * Register the merchant as a vendor on the provider, OR refresh status if
- * already registered. Idempotent — safe to call from KYC approval and from
- * the periodic sync cron.
+ * Register the merchant as a beneficiary/vendor on the provider so funds can
+ * be routed to their bank account. Idempotent — safe to call from KYC
+ * approval and from the periodic vendor-sync cron.
+ *
+ * For Decentro: registers a beneficiary (bank account + IFSC, or UPI VPA).
+ * The returned beneficiary_id is stored in merchant.providerMerchantId and
+ * used as payee_account when generating QR codes.
  */
 export async function ensureVendor(merchantId: string): Promise<{
   vendorId: string;
@@ -48,13 +52,14 @@ export async function ensureVendor(merchantId: string): Promise<{
 
   const provider = getProvider(merchant.preferredProvider);
   const existingVendorId = decryptString(merchant.providerMerchantId);
+  const merchantVpa = decryptString(merchant.providerVpa);
 
   // Already ACTIVE — nothing to do.
   if (existingVendorId && merchant.providerStatus === "ACTIVE") {
     return { vendorId: existingVendorId, status: "ACTIVE" };
   }
 
-  // Already registered but pending — just resync.
+  // Already registered but pending — refresh status.
   if (existingVendorId && provider.getVendorStatus) {
     try {
       const r = await provider.getVendorStatus(existingVendorId);
@@ -72,14 +77,16 @@ export async function ensureVendor(merchantId: string): Promise<{
     }
   }
 
-  // Not yet registered — create.
+  // Not yet registered — create beneficiary on provider.
   if (!provider.createVendor) {
     throw new VendorError(
       `Provider ${provider.name} does not support vendor registration`,
       501,
     );
   }
+
   const { pan, bankAccount, ifsc, holder } = requireKycFields(merchant);
+
   const result = await provider.createVendor({
     merchantId: merchant.id,
     name: merchant.businessName,
@@ -89,16 +96,50 @@ export async function ensureVendor(merchantId: string): Promise<{
     bankAccountNumber: bankAccount,
     bankAccountHolderName: holder,
     ifsc,
+    vpa: merchantVpa || null,
   });
+
   await merchantsRepo.setProviderVendor(merchant.id, {
     providerMerchantId: encryptString(result.vendorId),
     providerStatus: result.status,
   });
+
   logger.info(
     { merchantId, vendorId: result.vendorId, status: result.status },
-    "[vendor] registered with provider",
+    "[vendor] registered beneficiary with provider",
   );
   return { vendorId: result.vendorId, status: result.status };
+}
+
+/**
+ * Re-register a vendor when the merchant's UPI VPA changes.
+ * Clears the existing beneficiary_id so ensureVendor will create a fresh one.
+ */
+export async function resetAndReregisterVendor(merchantId: string): Promise<{
+  vendorId: string;
+  status: string;
+} | null> {
+  const merchant = await merchantsRepo.findById(merchantId);
+  if (!merchant) return null;
+  if (merchant.kycStatus !== "APPROVED" && merchant.kycStatus !== "VERIFIED") {
+    return null;
+  }
+
+  // Clear existing vendor record so ensureVendor recreates it.
+  await merchantsRepo.setProviderVendor(merchantId, {
+    providerMerchantId: null,
+    providerStatus: "PENDING",
+  });
+
+  try {
+    return await ensureVendor(merchantId);
+  } catch (e) {
+    logger.warn(
+      { err: e, merchantId },
+      "[vendor] resetAndReregisterVendor failed",
+    );
+    return null;
+  }
 }
 
 /**

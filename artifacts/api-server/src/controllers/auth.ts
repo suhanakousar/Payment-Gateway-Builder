@@ -33,6 +33,7 @@ const UpdateKycBody = z.object({
 import * as authService from "../services/auth";
 import * as merchantService from "../services/merchant";
 import { registerApprovedMerchantVendor } from "../services/kyc";
+import { resetAndReregisterVendor } from "../services/vendor";
 import { setAuthCookie, clearAuthCookie } from "../middlewares/auth";
 import { issueCsrfCookie } from "../middlewares/csrf";
 
@@ -136,10 +137,16 @@ export async function updateProviderConfig(
     return;
   }
   try {
-    const m = await merchantService.saveProviderConfig(req.merchant!.id, parsed.data);
+    const merchantId = req.merchant!.id;
+    const m = await merchantService.saveProviderConfig(merchantId, parsed.data);
     if (!m) {
       res.status(404).json({ error: "Merchant not found" });
       return;
+    }
+    // If a UPI VPA was saved/changed, re-register the merchant as a Decentro
+    // beneficiary so the new VPA is used for future QR generation.
+    if (parsed.data.providerVpa) {
+      void resetAndReregisterVendor(merchantId);
     }
     res.json({ merchant: m });
   } catch (e) {

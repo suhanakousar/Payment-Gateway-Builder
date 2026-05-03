@@ -15,17 +15,21 @@ import type {
 /**
  * Decentro provider — UPI collection via Decentro's payment API.
  *
- * Real API used when DECENTRO_CLIENT_ID + DECENTRO_CLIENT_SECRET +
- * DECENTRO_MODULE_SECRET are present; otherwise local sandbox stub.
+ * LIVE mode: requires DECENTRO_CLIENT_ID + DECENTRO_CLIENT_SECRET +
+ * DECENTRO_MODULE_SECRET in environment.
  *
- * Multi-merchant routing: uses Decentro virtual accounts
- * (POST /v2/banking/account/virtual). If virtual accounts are not enabled
- * on your Decentro subscription, falls back to the platform's single
- * collection account (DECENTRO_PAYEE_ACCOUNT); all settlements are then
- * handled manually from the Decentro dashboard.
+ * Payment flow (LIVE):
+ *  1. On merchant KYC approval → createVendor() registers merchant as a
+ *     Decentro beneficiary (bank account + IFSC, or UPI VPA).
+ *     The returned beneficiary_id is stored in merchant.providerMerchantId.
+ *  2. On order create → createQR() sends merchant's beneficiary_id as the
+ *     payee_account in the Decentro UPI link request. Decentro validates the
+ *     payee and returns a real UPI intent/QR the customer can scan.
+ *  3. Customer pays → Decentro fires webhook → order marked SUCCESS.
  *
- * Webhook signature: HMAC-SHA256 of raw body with DECENTRO_MODULE_SECRET,
- * hex-encoded in the `x-decentro-signature` header.
+ * SANDBOX mode (no API keys): local UPI intent is built with the merchant's
+ * saved providerVpa. Use the "Demo controls" on the payment page to simulate
+ * payment completion.
  */
 
 const CLIENT_ID = process.env["DECENTRO_CLIENT_ID"] ?? "";
@@ -33,8 +37,7 @@ const CLIENT_SECRET = process.env["DECENTRO_CLIENT_SECRET"] ?? "";
 const MODULE_SECRET = process.env["DECENTRO_MODULE_SECRET"] ?? "";
 const PROVIDER_SECRET = process.env["DECENTRO_PROVIDER_SECRET"] ?? "";
 const LIVE = Boolean(CLIENT_ID && CLIENT_SECRET && MODULE_SECRET);
-const DC_BASE =
-  process.env["DECENTRO_BASE"] ?? "https://in.decentro.tech";
+const DC_BASE = process.env["DECENTRO_BASE"] ?? "https://in.decentro.tech";
 const PAYEE_ACCOUNT = process.env["DECENTRO_PAYEE_ACCOUNT"] ?? "";
 const WEBHOOK_SECRET =
   process.env["DECENTRO_WEBHOOK_SECRET"] ??
@@ -82,7 +85,7 @@ async function dcRequest<T>(path: string, init: RequestInit): Promise<T> {
     } catch {
       // not JSON
     }
-    throw new Error(`Decentro ${path} ${res.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`Decentro ${path} ${res.status}: ${detail.slice(0, 300)}`);
   }
   return text ? (JSON.parse(text) as T) : ({} as T);
 }
@@ -95,6 +98,20 @@ function mapDcStatus(s: string | undefined): ProviderStatus {
   return "PENDING";
 }
 
+// ─── Decentro API response shapes ────────────────────────────────────────────
+
+interface DcBeneficiaryResponse {
+  decentroTxnId?: string;
+  status?: string;
+  responseCode?: string;
+  message?: string;
+  data?: {
+    beneficiaryId?: string;
+    beneficiary_id?: string;
+    status?: string;
+  };
+}
+
 interface DcUpiLinkResponse {
   decentroTxnId?: string;
   status?: string;
@@ -105,6 +122,7 @@ interface DcUpiLinkResponse {
     link?: string;
     qrCode?: string;
     generatedLink?: string;
+    upiLink?: string;
   };
 }
 
@@ -122,19 +140,6 @@ interface DcTxnStatusResponse {
   };
 }
 
-interface DcVirtualAccountResponse {
-  decentroTxnId?: string;
-  status?: string;
-  responseCode?: string;
-  message?: string;
-  data?: {
-    accountNumber?: string;
-    ifsc?: string;
-    bankName?: string;
-    upiId?: string;
-  };
-}
-
 interface DcRefundResponse {
   decentroTxnId?: string;
   status?: string;
@@ -142,26 +147,29 @@ interface DcRefundResponse {
   message?: string;
 }
 
+// ─── Provider implementation ─────────────────────────────────────────────────
+
 export const decentroProvider: PaymentProvider = {
   name: "decentro",
   displayName: "Decentro",
   isAvailable: () => true,
 
   async createQR(input: ProviderOrderInput): Promise<ProviderOrderResult> {
-    const payeeAccount =
-      input.merchantConfig?.providerVpa ??
-      input.merchantConfig?.providerAccount ??
-      input.merchantConfig?.providerMerchantId ??
-      PAYEE_ACCOUNT;
+    // beneficiary_id is stored in providerMerchantId after registration.
+    // Fallback chain: beneficiary_id → providerVpa → PAYEE_ACCOUNT.
+    const beneficiaryId = input.merchantConfig?.providerMerchantId ?? null;
+    const payeeVpa = input.merchantConfig?.providerVpa ?? null;
+    const payeeAccount = beneficiaryId ?? payeeVpa ?? PAYEE_ACCOUNT;
 
     if (LIVE) {
       if (!payeeAccount) {
         throw new Error(
-          "No payee account configured — set DECENTRO_PAYEE_ACCOUNT or complete merchant vendor registration",
+          "No payee configured — save your UPI ID in KYC → Provider mapping and ensure it is registered as a Decentro beneficiary.",
         );
       }
 
       const refId = `pl${input.orderId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 28)}`;
+
       const res = await dcRequest<DcUpiLinkResponse>("/v2/payments/upi/link", {
         method: "POST",
         body: JSON.stringify({
@@ -182,9 +190,9 @@ export const decentroProvider: PaymentProvider = {
         );
       }
 
-      const txnId =
-        res.decentroTxnId ?? res.data.transactionId ?? refId;
-      const qrString = res.data.link ?? res.data.generatedLink ?? null;
+      const txnId = res.decentroTxnId ?? res.data.transactionId ?? refId;
+      const qrString =
+        res.data.upiLink ?? res.data.link ?? res.data.generatedLink ?? null;
       let qrImage: string | null = null;
 
       if (res.data.qrCode) {
@@ -207,12 +215,10 @@ export const decentroProvider: PaymentProvider = {
       };
     }
 
-    // Sandbox stub — builds a local UPI intent for visual fidelity.
-    const sandboxVpa =
-      input.merchantConfig?.providerVpa ||
-      input.merchantConfig?.providerAccount ||
-      payeeAccount ||
-      "paylite@decentro";
+    // ── Sandbox stub ──────────────────────────────────────────────────────────
+    // Use merchant's real UPI VPA so the QR can be tested manually.
+    // If no VPA is saved, fall back to a placeholder (use Demo controls to mark paid).
+    const sandboxVpa = payeeVpa || payeeAccount || "sandbox@decentro";
     const txnId = `dc_${crypto.randomBytes(8).toString("hex")}`;
     const qrString = buildUpiIntent({
       vpa: sandboxVpa,
@@ -221,7 +227,10 @@ export const decentroProvider: PaymentProvider = {
       txnRef: txnId,
       note: input.orderId,
     });
-    const qrImage = await QRCode.toDataURL(qrString, { width: 320, margin: 1 });
+    const qrImage = await QRCode.toDataURL(qrString, {
+      width: 320,
+      margin: 1,
+    });
     return { txnId, providerOrderId: txnId, qrString, qrImage };
   },
 
@@ -247,16 +256,19 @@ export const decentroProvider: PaymentProvider = {
       };
     }
     try {
-      const res = await dcRequest<DcRefundResponse>("/v2/payments/upi/refund", {
-        method: "POST",
-        body: JSON.stringify({
-          reference_id: `rfnd${txnId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20)}${crypto
-            .randomBytes(4)
-            .toString("hex")}`,
-          transaction_id: txnId,
-          refund_amount: Math.round(amount * 100) / 100,
-        }),
-      });
+      const res = await dcRequest<DcRefundResponse>(
+        "/v2/payments/upi/refund",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            reference_id: `rfnd${txnId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 20)}${crypto
+              .randomBytes(4)
+              .toString("hex")}`,
+            transaction_id: txnId,
+            refund_amount: Math.round(amount * 100) / 100,
+          }),
+        },
+      );
       const ok = res.status === "SUCCESS";
       return {
         ok,
@@ -338,68 +350,142 @@ export const decentroProvider: PaymentProvider = {
   },
 
   /**
-   * Creates a virtual account per merchant for automatic fund routing.
-   * Falls back to DECENTRO_PAYEE_ACCOUNT if virtual accounts are not
-   * enabled on the Decentro subscription.
+   * Register merchant as a Decentro beneficiary.
+   *
+   * Tries two strategies in order:
+   *  1. Bank account + IFSC beneficiary (preferred — allows Decentro to route
+   *     settlement directly to the merchant's bank account).
+   *  2. UPI VPA beneficiary (simpler, works for merchants who only have a VPA).
+   *
+   * The returned beneficiary_id is stored in merchant.providerMerchantId and
+   * used as the payee_account for all subsequent QR/collect requests.
    */
-  async createVendor(input: ProviderVendorInput): Promise<ProviderVendorResult> {
+  async createVendor(
+    input: ProviderVendorInput,
+  ): Promise<ProviderVendorResult> {
     if (!LIVE) {
-      return {
-        vendorId: PAYEE_ACCOUNT || `dc_sandbox_${input.merchantId.replace(/-/g, "").slice(0, 12)}`,
-        status: "ACTIVE",
-      };
+      // In sandbox, use the merchant's VPA as a pseudo beneficiary_id so QRs
+      // show the right payee name and address.
+      const sandboxId =
+        input.vpa ||
+        PAYEE_ACCOUNT ||
+        `sandbox_${input.merchantId.replace(/-/g, "").slice(0, 12)}`;
+      return { vendorId: sandboxId, status: "ACTIVE" };
     }
 
+    const refId = `plben${input.merchantId.replace(/-/g, "").slice(0, 19)}`;
+
+    // ── Strategy 1: bank account beneficiary ─────────────────────────────────
     try {
-      const refId = `plva${input.merchantId.replace(/-/g, "").slice(0, 20)}`;
-      const res = await dcRequest<DcVirtualAccountResponse>(
-        "/v2/banking/account/virtual",
+      const res = await dcRequest<DcBeneficiaryResponse>(
+        "/v2/core_banking/beneficiary",
         {
           method: "POST",
           body: JSON.stringify({
             reference_id: refId,
-            name: input.name,
-            mobile: input.phone
+            beneficiary_name: input.name,
+            beneficiary_account_number: input.bankAccountNumber,
+            beneficiary_ifsc: input.ifsc,
+            beneficiary_email: input.email,
+            beneficiary_mobile: input.phone
               .replace(/^\+91/, "")
               .replace(/\D/g, "")
               .slice(0, 10),
-            email: input.email,
-            ifsc: input.ifsc,
-            account_number: input.bankAccountNumber,
+            beneficiary_type: "VENDOR",
           }),
         },
       );
 
-      if (res.status === "SUCCESS" && res.data?.accountNumber) {
-        const vendorId =
-          res.data.upiId ??
-          `${res.data.accountNumber}@${(res.data.ifsc ?? "").toLowerCase()}`;
-        return { vendorId, status: "ACTIVE" };
+      if (res.status === "SUCCESS") {
+        const beneficiaryId =
+          res.data?.beneficiaryId ??
+          res.data?.beneficiary_id ??
+          res.decentroTxnId ??
+          refId;
+        return { vendorId: beneficiaryId, status: "ACTIVE" };
       }
-
-      // Virtual accounts not enabled — fall back to platform collection account.
-      if (PAYEE_ACCOUNT) {
-        return { vendorId: PAYEE_ACCOUNT, status: "ACTIVE" };
-      }
-
-      return {
-        vendorId: refId,
-        status: "PENDING",
-        reason: res.message ?? "Virtual account pending verification",
-      };
     } catch {
-      // API not enabled on subscription — fall back to platform account.
-      if (PAYEE_ACCOUNT) {
-        return { vendorId: PAYEE_ACCOUNT, status: "ACTIVE" };
-      }
-      throw new Error(
-        "Decentro virtual account creation failed and no DECENTRO_PAYEE_ACCOUNT fallback is configured",
-      );
+      // Strategy 1 failed — try VPA beneficiary next.
     }
+
+    // ── Strategy 2: UPI VPA beneficiary ──────────────────────────────────────
+    if (input.vpa) {
+      try {
+        const vpaRefId = `plvpa${input.merchantId.replace(/-/g, "").slice(0, 19)}`;
+        const res = await dcRequest<DcBeneficiaryResponse>(
+          "/v2/core_banking/beneficiary",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              reference_id: vpaRefId,
+              beneficiary_name: input.name,
+              beneficiary_vpa: input.vpa,
+              beneficiary_email: input.email,
+              beneficiary_mobile: input.phone
+                .replace(/^\+91/, "")
+                .replace(/\D/g, "")
+                .slice(0, 10),
+              beneficiary_type: "VENDOR",
+            }),
+          },
+        );
+
+        if (res.status === "SUCCESS") {
+          const beneficiaryId =
+            res.data?.beneficiaryId ??
+            res.data?.beneficiary_id ??
+            res.decentroTxnId ??
+            vpaRefId;
+          return { vendorId: beneficiaryId, status: "ACTIVE" };
+        }
+
+        // Decentro returned non-SUCCESS — pending review.
+        return {
+          vendorId: vpaRefId,
+          status: "PENDING",
+          reason: res.message ?? "Beneficiary registration pending verification",
+        };
+      } catch (e) {
+        // VPA strategy also failed.
+        if (PAYEE_ACCOUNT) {
+          return { vendorId: PAYEE_ACCOUNT, status: "ACTIVE" };
+        }
+        throw new Error(
+          `Decentro beneficiary registration failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    // ── Final fallback ────────────────────────────────────────────────────────
+    if (PAYEE_ACCOUNT) {
+      return { vendorId: PAYEE_ACCOUNT, status: "ACTIVE" };
+    }
+
+    throw new Error(
+      "Decentro beneficiary registration failed — set DECENTRO_PAYEE_ACCOUNT as a fallback or provide merchant UPI VPA",
+    );
   },
 
   async getVendorStatus(vendorId: string): Promise<ProviderVendorResult> {
-    // Virtual accounts are immediately active once created.
+    // Decentro beneficiaries are either immediately active or manually reviewed.
+    // We return ACTIVE unless the ID looks like a pending stub.
+    if (vendorId.startsWith("plben") || vendorId.startsWith("plvpa")) {
+      // Try to poll status — if not supported, assume ACTIVE.
+      try {
+        const res = await dcRequest<DcBeneficiaryResponse>(
+          `/v2/core_banking/beneficiary/${encodeURIComponent(vendorId)}`,
+          { method: "GET" },
+        );
+        if (res.status === "SUCCESS") {
+          return {
+            vendorId,
+            status: (res.data?.status ?? "ACTIVE") === "ACTIVE" ? "ACTIVE" : "PENDING",
+          };
+        }
+      } catch {
+        // Endpoint may not exist — treat as ACTIVE.
+      }
+    }
     return { vendorId, status: "ACTIVE" };
   },
 };

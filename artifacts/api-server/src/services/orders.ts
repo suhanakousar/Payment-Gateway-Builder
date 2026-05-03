@@ -134,11 +134,13 @@ export async function createOrder(input: {
     customerPhone: input.customerPhone ?? null,
     merchantConfig: {
       merchantId: merchant.id,
+      // providerMerchantId = Decentro beneficiary_id (set after vendor registration).
+      // Used as the primary payee_account for QR generation.
       providerMerchantId: decryptString(merchant.providerMerchantId),
-      providerAccount: decryptString(merchant.providerMerchantId) || decryptString(merchant.providerVpa),
       providerStoreId: decryptString(merchant.providerStoreId),
       providerTerminalId: decryptString(merchant.providerTerminalId),
       providerReference: decryptString(merchant.providerReference),
+      // providerVpa = merchant's UPI VPA (fallback if no beneficiary_id yet).
       providerVpa: decryptString(merchant.providerVpa),
     },
   };
