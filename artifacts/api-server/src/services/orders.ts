@@ -142,22 +142,6 @@ export async function createOrder(input: {
     },
   };
 
-  // To accept real money, the merchant must be registered as a vendor /
-  // sub-account on the provider so funds can be split + settled to their
-  // bank. Block order creation until vendor is ACTIVE.
-  if (!providerInput.merchantConfig.providerMerchantId) {
-    throw new OrderError(
-      "Merchant is not yet registered with the payment provider — complete KYC and wait for vendor approval",
-      412,
-    );
-  }
-  if (merchant.providerStatus !== "ACTIVE") {
-    throw new OrderError(
-      `Merchant's provider vendor is not ACTIVE yet (status: ${merchant.providerStatus}). Wait for the provider to verify the bank account.`,
-      412,
-    );
-  }
-
   // Try preferred provider first if specified, else let router pick.
   let chosen;
   const preferredProvider = input.preferredProvider ?? merchant.preferredProvider;
