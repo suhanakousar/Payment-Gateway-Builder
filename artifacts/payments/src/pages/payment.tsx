@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { CheckCircle2, XCircle, Clock, Smartphone, Copy, RefreshCw } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Smartphone, Copy, RefreshCw, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -97,6 +97,7 @@ export default function PaymentPage() {
 
   const order = orderQuery.data;
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const errorMessage = orderQuery.error instanceof ApiError ? orderQuery.error.message : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -137,7 +138,7 @@ export default function PaymentPage() {
     return <div className="min-h-screen bg-white flex items-center justify-center"><div className="h-8 w-8 rounded-full border-2 border-neutral-200 border-t-neutral-800 animate-spin" /></div>;
   }
   if (orderQuery.isError || !order) {
-    return <div className="min-h-screen bg-white flex items-center justify-center p-4"><div className="text-center"><h1 className="text-xl font-semibold">Order not found</h1><p className="text-sm text-neutral-500 mt-1">Check the link or contact the merchant.</p></div></div>;
+    return <div className="min-h-screen bg-white flex items-center justify-center p-4"><div className="max-w-md text-center space-y-3"><div className="mx-auto h-12 w-12 rounded-full bg-rose-50 text-rose-600 flex items-center justify-center"><AlertTriangle size={22} /></div><h1 className="text-xl font-semibold">Payment unavailable</h1><p className="text-sm text-neutral-500">{errorMessage ?? "Check the link or contact the merchant."}</p></div></div>;
   }
 
   return (
@@ -157,7 +158,7 @@ export default function PaymentPage() {
             {order.status === "PENDING" && (
               <motion.div key="pending" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
                 <div className="border border-neutral-200 rounded-lg p-3 flex items-center justify-center bg-white">
-                  {qrDataUrl ? <img src={qrDataUrl} alt="UPI QR code" className="rounded" width={240} height={240} /> : <div className="h-[240px] w-[240px] flex items-center justify-center text-neutral-400 text-sm">Generating QR…</div>}
+                  {qrDataUrl ? <img src={qrDataUrl} alt="UPI QR code" className="rounded" width={240} height={240} /> : <div className="h-[240px] w-[240px] flex items-center justify-center text-neutral-400 text-sm text-center px-4">Generating QR… If this stays stuck, the merchant/provider setup is incomplete.</div>}
                 </div>
                 <Countdown expiresAt={order.expiresAt} />
                 <div className="flex items-center gap-2 text-xs text-neutral-600 justify-center"><Smartphone size={14} className="text-neutral-400" />Open any UPI app and scan to pay</div>

@@ -133,6 +133,20 @@ export async function autoApprovePendingKyc(): Promise<number> {
   return approved;
 }
 
+export async function registerApprovedMerchantVendor(merchantId: string): Promise<void> {
+  const merchant = await merchantsRepo.findById(merchantId);
+  if (!merchant) return;
+  if (merchant.kycStatus !== "APPROVED" && merchant.kycStatus !== "VERIFIED") return;
+  try {
+    await ensureVendor(merchantId);
+  } catch (e) {
+    logger.warn(
+      { err: e, merchantId },
+      "[kyc] vendor registration failed after kyc save",
+    );
+  }
+}
+
 export async function reject(opts: {
   merchantId: string;
   reason: string;

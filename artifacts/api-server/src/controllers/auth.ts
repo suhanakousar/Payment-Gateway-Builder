@@ -32,6 +32,7 @@ const UpdateKycBody = z.object({
 });
 import * as authService from "../services/auth";
 import * as merchantService from "../services/merchant";
+import { registerApprovedMerchantVendor } from "../services/kyc";
 import { setAuthCookie, clearAuthCookie } from "../middlewares/auth";
 import { issueCsrfCookie } from "../middlewares/csrf";
 
@@ -118,6 +119,7 @@ export async function updateKyc(req: Request, res: Response): Promise<void> {
       res.status(404).json({ error: "Merchant not found" });
       return;
     }
+    void registerApprovedMerchantVendor(req.merchant!.id);
     res.json({ merchant: m });
   } catch (e) {
     handleError(res, e);
