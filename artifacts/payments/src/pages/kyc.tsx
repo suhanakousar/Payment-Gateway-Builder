@@ -324,7 +324,7 @@ export default function Kyc() {
               Payment provider activation in progress
             </div>
             <div className="text-xs mt-0.5 opacity-80">
-              Cashfree is verifying your bank account
+              Your payment provider account is being activated
               {merchant?.providerStatus
                 ? ` (status: ${merchant.providerStatus})`
                 : ""}

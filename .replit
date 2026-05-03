@@ -66,5 +66,5 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-DEFAULT_PROVIDER = "cashfree"
-CASHFREE_BASE = "https://api.cashfree.com/pg"
+DEFAULT_PROVIDER = "decentro"
+PROVIDER_WEIGHTS = "decentro:90,cashfree:5,mock:5"

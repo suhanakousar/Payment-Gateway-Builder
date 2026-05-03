@@ -2,16 +2,17 @@ import type { PaymentProvider } from "./types";
 import { mockProvider } from "./mock";
 import { razorpayProvider } from "./razorpay";
 import { cashfreeProvider } from "./cashfree";
+import { decentroProvider } from "./decentro";
 import { ProviderRouter, parseWeights } from "./router";
 
 const router = new ProviderRouter();
-const defaultProviderName = process.env["DEFAULT_PROVIDER"] ?? "cashfree";
+const defaultProviderName = process.env["DEFAULT_PROVIDER"] ?? "decentro";
 
 const weights = parseWeights(
-  process.env["PROVIDER_WEIGHTS"] ?? "razorpay:70,cashfree:25,mock:5",
+  process.env["PROVIDER_WEIGHTS"] ?? "decentro:90,cashfree:5,mock:5",
 );
 
-for (const p of [razorpayProvider, cashfreeProvider, mockProvider]) {
+for (const p of [decentroProvider, razorpayProvider, cashfreeProvider, mockProvider]) {
   router.register(p, weights.get(p.name) ?? 0);
 }
 

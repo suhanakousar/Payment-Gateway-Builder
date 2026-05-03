@@ -20,13 +20,18 @@ const server = app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
 
   const domain = process.env["REPLIT_DEV_DOMAIN"] ?? `localhost:${port}`;
-  const webhookUrl = `https://${domain}/api/webhook?provider=cashfree`;
-  const isLive = Boolean(process.env["CASHFREE_APP_ID"] && process.env["CASHFREE_SECRET_KEY"]);
+  const defaultProvider = process.env["DEFAULT_PROVIDER"] ?? "decentro";
+  const webhookUrl = `https://${domain}/api/webhook?provider=${defaultProvider}`;
+  const decentroLive = Boolean(
+    process.env["DECENTRO_CLIENT_ID"] &&
+    process.env["DECENTRO_CLIENT_SECRET"] &&
+    process.env["DECENTRO_MODULE_SECRET"],
+  );
   logger.info(
-    { webhookUrl, live: isLive },
-    isLive
-      ? "Cashfree LIVE mode — register webhook URL in Cashfree dashboard"
-      : "Cashfree SANDBOX mode — set CASHFREE_APP_ID + CASHFREE_SECRET_KEY for live payments",
+    { webhookUrl, provider: defaultProvider, live: decentroLive },
+    decentroLive
+      ? "Decentro LIVE mode — register webhook URL in Decentro dashboard"
+      : "Decentro SANDBOX mode — set DECENTRO_CLIENT_ID + DECENTRO_CLIENT_SECRET + DECENTRO_MODULE_SECRET for live payments",
   );
 
   startJobs();

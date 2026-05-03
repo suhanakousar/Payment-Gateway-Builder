@@ -35,12 +35,13 @@ Razorpay-like UPI payment aggregator for Indian merchants. Production-shaped bac
 - Password hashing via bcryptjs
 
 ### Provider adapters & smart router (`artifacts/api-server/src/providers/`)
-- `razorpay.ts` — mints `rzp_order_<id>` via local sandbox mirroring Razorpay request/response shape; HMAC-SHA256 webhook signing scheme
-- `cashfree.ts` — same shape with Cashfree's signing scheme
-- `mock.ts` — fallback `qr_<id>` provider
-- `router.ts` — weighted selection (razorpay 70 / cashfree 25 / mock 5), per-provider circuit breaker (opens after 3 consecutive failures, 60s cool-down), automatic fallback to next healthy provider on `createQR` failure
+- `decentro.ts` — **primary provider**; UPI collection via Decentro API (`/v2/payments/upi/link`); virtual account per merchant for auto-routing; falls back to `DECENTRO_PAYEE_ACCOUNT` if virtual accounts not enabled; HMAC-SHA256 webhook via `x-decentro-signature`
+- `cashfree.ts` — Cashfree Easy Split (weight 5, fallback only); LIVE when `CASHFREE_APP_ID`+`CASHFREE_SECRET_KEY` set
+- `razorpay.ts` — local sandbox stub (weight 0 by default)
+- `mock.ts` — fallback `qr_<id>` provider (weight 5)
+- `router.ts` — weighted selection (decentro 90 / cashfree 5 / mock 5), per-provider circuit breaker (opens after 3 consecutive failures, 60s cool-down), automatic fallback to next healthy provider on `createQR` failure
 - `/api/dashboard/provider-health` exposes per-provider success rate + circuit state
-- Webhook receiver `controllers/providerWebhook.ts` routes by `?provider=razorpay|cashfree` and verifies with the matching scheme
+- Webhook receiver `controllers/providerWebhook.ts` routes by `?provider=decentro|cashfree` and verifies with the matching scheme
 
 ### Settlements + double-entry ledger
 - Fee calc in `services/fees.ts`: 2% + ₹2 GST in paise, stored on `orders.fee_paise` at SUCCESS time
@@ -87,6 +88,14 @@ Razorpay-like UPI payment aggregator for Indian merchants. Production-shaped bac
 - `SESSION_SECRET` — session signing secret (provisioned)
 - `WEBHOOK_SECRET` — HMAC secret for payment webhooks (optional in dev; literal `dev-signature` accepted)
 - `DATABASE_URL` — Postgres (provisioned)
+- `DEFAULT_PROVIDER` — active provider name (set to `decentro`)
+- `PROVIDER_WEIGHTS` — comma-separated weights e.g. `decentro:90,cashfree:5,mock:5`
+- `DECENTRO_CLIENT_ID` — Decentro API client ID (required for LIVE mode)
+- `DECENTRO_CLIENT_SECRET` — Decentro API client secret (required for LIVE mode)
+- `DECENTRO_MODULE_SECRET` — Decentro module secret (required for LIVE mode; also used as webhook HMAC key)
+- `DECENTRO_PROVIDER_SECRET` — Decentro provider secret (optional; needed for specific bank providers)
+- `DECENTRO_PAYEE_ACCOUNT` — platform UPI VPA/account for collection (fallback when virtual accounts not used)
+- `DECENTRO_WEBHOOK_SECRET` — override webhook HMAC key (defaults to `DECENTRO_MODULE_SECRET`)
 
 ### DB tables (lib/db/src/schema)
 - `merchants` — auth + KYC status (`kyc_status`, `kyc_submitted_at`, `kyc_reviewed_at`, `kyc_rejection_reason`)
