@@ -23,6 +23,8 @@ export interface ProviderOrderInput {
     merchantId: string;
     /** Provider-side vendor/sub-account id (e.g. Cashfree Easy Split vendor_id, Razorpay acc_xxx). */
     providerMerchantId?: string | null;
+    /** Provider collection/payout account or virtual payment address. */
+    providerAccount?: string | null;
     providerStoreId?: string | null;
     providerTerminalId?: string | null;
     providerReference?: string | null;

@@ -135,6 +135,7 @@ export async function createOrder(input: {
     merchantConfig: {
       merchantId: merchant.id,
       providerMerchantId: decryptString(merchant.providerMerchantId),
+      providerAccount: decryptString(merchant.providerMerchantId) || decryptString(merchant.providerVpa),
       providerStoreId: decryptString(merchant.providerStoreId),
       providerTerminalId: decryptString(merchant.providerTerminalId),
       providerReference: decryptString(merchant.providerReference),

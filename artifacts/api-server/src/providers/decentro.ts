@@ -150,6 +150,7 @@ export const decentroProvider: PaymentProvider = {
   async createQR(input: ProviderOrderInput): Promise<ProviderOrderResult> {
     const payeeAccount =
       input.merchantConfig?.providerVpa ??
+      input.merchantConfig?.providerAccount ??
       input.merchantConfig?.providerMerchantId ??
       PAYEE_ACCOUNT;
 
@@ -207,7 +208,11 @@ export const decentroProvider: PaymentProvider = {
     }
 
     // Sandbox stub — builds a local UPI intent for visual fidelity.
-    const sandboxVpa = input.merchantConfig?.providerVpa || payeeAccount || "paylite@decentro";
+    const sandboxVpa =
+      input.merchantConfig?.providerVpa ||
+      input.merchantConfig?.providerAccount ||
+      payeeAccount ||
+      "paylite@decentro";
     const txnId = `dc_${crypto.randomBytes(8).toString("hex")}`;
     const qrString = buildUpiIntent({
       vpa: sandboxVpa,
