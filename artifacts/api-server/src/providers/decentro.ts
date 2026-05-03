@@ -149,8 +149,8 @@ export const decentroProvider: PaymentProvider = {
 
   async createQR(input: ProviderOrderInput): Promise<ProviderOrderResult> {
     const payeeAccount =
-      input.merchantConfig?.providerMerchantId ??
       input.merchantConfig?.providerVpa ??
+      input.merchantConfig?.providerMerchantId ??
       PAYEE_ACCOUNT;
 
     if (LIVE) {
